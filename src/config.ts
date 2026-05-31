@@ -1,77 +1,55 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-function requireEnv(key: string): string {
-  const val = process.env[key];
-  if (!val) throw new Error(`❌ Missing required env variable: ${key}`);
-  return val;
-}
-
 function optionalEnv(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
-function qualityModeEnv(): 'low' | 'normal' | 'high' {
-  const value = optionalEnv('QUALITY_MODE', 'high').toLowerCase();
-  return value === 'low' || value === 'normal' || value === 'high' ? value : 'high';
+function numberEnv(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
 
-const okxApiKey = optionalEnv('OKX_API_KEY', '');
-const okxApiSecret = optionalEnv('OKX_API_SECRET', '');
-const okxPassphrase = optionalEnv('OKX_API_PASSPHRASE', '');
-const okxKeysPresent = Boolean(okxApiKey && okxApiSecret && okxPassphrase);
+const botToken = optionalEnv('BOT_TOKEN', optionalEnv('TELEGRAM_BOT_TOKEN', ''));
+const adminId = optionalEnv('ADMIN_ID', optionalEnv('TELEGRAM_ADMIN_ID', ''));
 
 export const config = {
   telegram: {
-    botToken: requireEnv('TELEGRAM_BOT_TOKEN'),
-    chatId: requireEnv('TELEGRAM_CHAT_ID'),
-    adminId: optionalEnv('TELEGRAM_ADMIN_ID', ''),
+    botToken,
+    adminId,
+    chatId: optionalEnv('TELEGRAM_CHAT_ID', adminId),
     sendStartupToChannel: optionalEnv('SEND_STARTUP_TO_CHANNEL', 'false') === 'true',
   },
-
-  okx: {
-    apiKey: okxApiKey,
-    apiSecret: okxApiSecret,
-    passphrase: okxPassphrase,
-    baseUrl: 'https://www.okx.com',
-    isDemo: optionalEnv('DEMO_TRADING', 'true') === 'true',
+  openai: {
+    apiKey: optionalEnv('OPENAI_API_KEY', ''),
   },
-
-  trading: {
-    isLive: optionalEnv('LIVE_TRADING', 'false') === 'true' && okxKeysPresent,
-    symbols: optionalEnv(
-      'SYMBOLS',
-      'BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP'
-    )
-      .split(',')
-      .map(s => s.trim()),
-
-    timeframes: optionalEnv('TIMEFRAMES', '15m,1H,4H')
-      .split(',')
-      .map(s => s.trim()),
-
-    riskPerTrade: parseFloat(optionalEnv('RISK_PER_TRADE', '1')),
-    maxDailyLoss: parseFloat(optionalEnv('MAX_DAILY_LOSS', '3')),
-    maxOpenPositions: parseInt(optionalEnv('MAX_OPEN_POSITIONS', '3')),
-    maxLossesInRow: parseInt(optionalEnv('MAX_LOSSES_IN_ROW', '3')),
-    minSignalConfidence: parseInt(
-      optionalEnv('MIN_SIGNAL_CONFIDENCE', '7')
-    ),
-    autoOptimize: optionalEnv('AUTO_OPTIMIZE', 'false') === 'true',
-    minAtrPercent: parseFloat(optionalEnv('MIN_ATR_PERCENT', '0.2')),
-    maxAtrPercent: parseFloat(optionalEnv('MAX_ATR_PERCENT', '3')),
-    defensiveModeDrawdown: parseFloat(optionalEnv('DEFENSIVE_MODE_DRAWDOWN', '5')),
-    minVolumeMultiplier: parseFloat(optionalEnv('MIN_VOLUME_MULTIPLIER', '1.2')),
-    qualityMode: qualityModeEnv(),
-
-  },
-
+  broker: optionalEnv('BROKER', 'BCS'),
   database: {
-    url: optionalEnv('DATABASE_URL', './trading.db'),
+    url: optionalEnv('DATABASE_URL', './bcs-trading.db'),
   },
-
+  trading: {
+    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 100000),
+    riskPerTrade: numberEnv('DEFAULT_RISK_PER_TRADE', 1),
+    maxDailyLoss: numberEnv('MAX_DAILY_LOSS', 3),
+    maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 10),
+    autoOptimize: optionalEnv('AUTO_OPTIMIZE', 'false') === 'true',
+    instruments: optionalEnv('INSTRUMENTS', 'SBER,GAZP,LKOH,IMOEX,Si,BR,GOLD')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean),
+  },
+  commissions: {
+    monthlyServiceRub: numberEnv('BCS_MONTHLY_SERVICE_RUB', 299),
+    securitiesRatePercent: numberEnv('BCS_SECURITIES_RATE_PERCENT', 0.04),
+    currencyRatePercent: numberEnv('BCS_CURRENCY_RATE_PERCENT', 0.04),
+    currencyPurchaseExtraPercent: numberEnv('BCS_CURRENCY_PURCHASE_EXTRA_PERCENT', 0.1),
+    futuresFeeRubPerContract: numberEnv('BCS_FUTURES_FEE_RUB_PER_CONTRACT', 1.2),
+    optionsMaxPercent: numberEnv('BCS_OPTIONS_MAX_PERCENT', 1),
+  },
   server: {
-    port: parseInt(optionalEnv('PORT', '3000')),
+    port: numberEnv('PORT', 3000),
   },
 } as const;
 

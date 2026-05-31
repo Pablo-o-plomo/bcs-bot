@@ -1,1 +1,1 @@
-export const BUILD_VERSION = 'admin-buttons-v5-2026-05-30-21-10';
+export const BUILD_VERSION = '1.0.0-bcs-analytics';

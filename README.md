@@ -1,257 +1,136 @@
-# 🤖 OKX Trading Bot
+# 🤖 BCS Trading Assistant
 
-Торговый Telegram-бот для биржи OKX с техническим анализом, риск-менеджментом и журналом сделок.
+Telegram-бот для анализа и сопровождения торговли через БКС. Проект работает в режиме **analytics-only**: бот помогает вести дневник сделок, считать риск, комиссии, P&L и отчеты, но **не отправляет торговые поручения брокеру**.
 
-## ✅ Функциональность
+> ⚠️ Это не инвестиционная рекомендация. Все торговые решения принимает пользователь.
 
-- **Анализ рынка**: EMA 20/50/200, RSI, MACD, ATR, объемы, уровни поддержки/сопротивления, пробои
-- **Multi-timeframe**: анализ на 3 тайм-фреймах одновременно
-- **Paper trading**: по умолчанию, без реальных ордеров
-- **Live trading**: включается через `LIVE_TRADING=true`
-- **Риск-менеджмент**: 1% на сделку, лимит дневного убытка, пауза после серии потерь
-- **Telegram-уведомления**: сигналы, TP/SL, дневной отчет
-- **Журнал сделок**: SQLite, теги ошибок, анализ каждые 20 сделок
-- **Admin-команды**: /start, /balance, /positions, /stats, /pause, /resume и др.
+## Возможности
 
-## 🚀 Быстрый старт
+- Telegram Bot API и inline-кнопки.
+- Главное меню с разделами портфеля, сделок, анализа, AI-разбора, риска и отчетов.
+- Дневник сделок и открытые позиции в SQLite.
+- Расчет суммы позиции, риска в ₽, риска от депозита, потенциальной прибыли, Risk/Reward и P&L с учетом комиссии.
+- Модуль комиссий БКС `src/bcs/commission_bcs.ts` с настройками через `.env`.
+- Поддержка типов инструментов: акции РФ, фьючерсы MOEX, валюта, облигации, фонды, опционы в комиссионном модуле.
+- Дневной и месячный отчеты: депозит, позиции, сделки, P&L, комиссии, winrate, лучшие/худшие сделки и рекомендации.
+- Админ/служебные команды через Telegram.
 
-### 1. Установка
+## Главное меню
 
-```bash
-git clone <repo>
-cd okx-bot
-npm install
-# или: pnpm install
-```
+- 📊 Портфель
+- 📝 Добавить сделку
+- 📈 Анализ инструмента
+- 🧠 AI-разбор
+- ⚠️ Риск-менеджмент
+- 💰 Комиссии БКС
+- 📋 Дневник сделок
+- 📅 Отчет за день
+- 📆 Отчет за месяц
+- ⚙️ Настройки
 
-### 2. Настройка `.env`
+## Переменные окружения
 
-```bash
-cp .env.example .env
-```
-
-Заполните обязательные переменные:
+Создайте `.env`:
 
 ```env
-TELEGRAM_BOT_TOKEN=<токен от @BotFather>
-TELEGRAM_CHAT_ID=<ID канала/группы, например -100123456789>
-TELEGRAM_ADMIN_ID=<ваш личный chat ID>
+BOT_TOKEN=
+ADMIN_ID=
+OPENAI_API_KEY=
+DATABASE_URL=./bcs-trading.db
+BROKER=BCS
+DEFAULT_DEPOSIT_RUB=100000
+DEFAULT_RISK_PER_TRADE=1
+PORT=3000
 
-# Для paper trading — OKX API не обязателен
-# Для live trading — нужны ключи OKX
-OKX_API_KEY=
-OKX_API_SECRET=
-OKX_API_PASSPHRASE=
+# Комиссии БКС, редактируемые параметры
+BCS_MONTHLY_SERVICE_RUB=299
+BCS_SECURITIES_RATE_PERCENT=0.04
+BCS_CURRENCY_RATE_PERCENT=0.04
+BCS_CURRENCY_PURCHASE_EXTRA_PERCENT=0.1
+BCS_FUTURES_FEE_RUB_PER_CONTRACT=1.2
+BCS_OPTIONS_MAX_PERCENT=1
 ```
 
-### 3. Запуск (Paper Trading)
+`TELEGRAM_BOT_TOKEN` и `TELEGRAM_ADMIN_ID` также поддерживаются как совместимые алиасы для `BOT_TOKEN` и `ADMIN_ID`.
+
+## Локальный запуск
+
+```bash
+npm install
+npm run build
+npm start
+```
+
+Для разработки:
 
 ```bash
 npm run dev
 ```
 
-### 4. Сборка и запуск в production
+Health-check доступен по адресу:
 
-```bash
-npm run build
-npm start
+```text
+GET /health
 ```
 
-## ⚙️ Переменные окружения
+## Деплой на Railway
 
-| Переменная | По умолчанию | Описание |
-|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | — | Токен бота |
-| `TELEGRAM_CHAT_ID` | — | ID канала для публикации сигналов |
-| `TELEGRAM_ADMIN_ID` | — | Ваш ID для алертов об ошибках |
-| `SEND_STARTUP_TO_CHANNEL` | `false` | Отправлять startup/restart уведомления в канал; по умолчанию только admin |
-| `OKX_API_KEY` | — | Ключ OKX API |
-| `OKX_API_SECRET` | — | Секрет OKX API |
-| `OKX_API_PASSPHRASE` | — | Пароль OKX API |
-| `LIVE_TRADING` | `false` | Включить реальную торговлю |
-| `DEMO_TRADING` | `true` | Использовать OKX simulated trading |
-| `SYMBOLS` | `BTC-USDT-SWAP,...` | Инструменты через запятую |
-| `TIMEFRAMES` | `15m,1H,4H` | Тайм-фреймы (первый — основной) |
-| `RISK_PER_TRADE` | `1` | Риск на сделку, % |
-| `MAX_DAILY_LOSS` | `3` | Макс. дневной убыток, % |
-| `MAX_OPEN_POSITIONS` | `3` | Макс. одновременных позиций |
-| `MAX_LOSSES_IN_ROW` | `3` | Пауза после N убытков подряд |
-| `MIN_SIGNAL_CONFIDENCE` | `6` | Мин. уверенность сигнала (1-10) |
-| `AUTO_OPTIMIZE` | `false` | Авто-применение рекомендаций |
-| `DATABASE_URL` | `./trading.db` | Путь к SQLite |
+1. Создайте новый Railway project из GitHub-репозитория.
+2. В Variables добавьте значения из раздела `.env`.
+3. Укажите стартовую команду:
+   ```bash
+   npm start
+   ```
+4. Build command:
+   ```bash
+   npm install && npm run build
+   ```
+5. Для постоянной SQLite-базы подключите volume и задайте `DATABASE_URL` на путь внутри volume, например `/data/bcs-trading.db`.
 
-## 📊 Архитектура
+## Команды Telegram
 
-```
-src/
-  index.ts              — точка входа, планировщик
-  config.ts             — конфигурация из .env
-  okx/
-    client.ts           — HTTP-клиент OKX с подписью HMAC
-    market.ts           — свечи, тикеры, инструменты
-    trading.ts          — paper/live ордера
-  telegram/
-    bot.ts              — бот, команды, рассылка
-    messages.ts         — форматирование сообщений
-  strategy/
-    indicators.ts       — EMA, RSI, MACD, ATR, уровни
-    signalEngine.ts     — генерация сигналов
-    riskManager.ts      — правила риска
-    tradeManager.ts     — мониторинг сделок
-  database/
-    db.ts               — SQLite запросы
-    models.ts           — TypeScript типы
-  reports/
-    dailyReport.ts      — дневной P&L отчет
-    learningReport.ts   — анализ 20 сделок
-  utils/
-    logger.ts           — Winston логгер
-```
+| Команда | Назначение |
+| --- | --- |
+| `/start` или `/menu` | Открыть главное меню |
+| `/portfolio` | Портфель и открытые позиции |
+| `/add_trade` | Пошаговое добавление сделки |
+| `/analyze SBER` | Краткий анализ инструмента |
+| `Разбери сделку ...` | AI-разбор сделки |
+| `/ai_review` | Запросить формат AI-разбора |
+| `/risk` | Риск-менеджмент |
+| `/commissions` | Комиссии БКС |
+| `/diary` | Дневник сделок |
+| `/daily_report` | Дневной отчет |
+| `/monthly_report` | Месячный отчет |
+| `/settings` | Депозит, риск и список инструментов |
+| `/trade 123` | Детали сделки по ID |
 
-## 📱 Команды Telegram
+## Как добавить сделку
 
-| Команда | Описание |
-|---|---|
-| `/start` | Admin control panel с inline-кнопками |
-| `/menu` | Повторно показать admin keyboard |
-| `/balance` | Текущий баланс |
-| `/version` | Показать build version для диагностики Railway deploy |
-| `/signals` | Последние 5 сигналов |
-| `/positions` | Открытые позиции |
-| `/stats` | Статистика сделок |
-| `/winrate` | Winrate по монетам |
-| `/market` | Rule-based market summary |
-| `/rejects` | Статистика reject-фильтров |
-| `/health` | Health/heartbeat и build version |
-| `/filters` | Текущие filter settings |
-| `/closed` | Последние закрытые сделки |
-| `/scan` | Safe stub для ручного scan now |
-| `/logs` | Safe stub для логов |
-| `/pause` | Остановить торговлю |
-| `/resume` | Возобновить |
-| `/mode` | Текущий режим |
-| `/risk` | Настройки риска |
-| `/report` | Дневной отчет |
-| `/errors` | Частые ошибки |
-| `/analyze` | Анализ последних 20 сделок |
+1. Нажмите `📝 Добавить сделку`.
+2. Выберите или отправьте тикер: `SBER`, `GAZP`, `LKOH`, `IMOEX`, `Si`, `BR`, `GOLD`.
+3. Выберите тип инструмента: акция, фьючерс, валюта, облигация или фонд.
+4. Выберите направление `LONG` / `SHORT`.
+5. Введите цену входа, количество, стоп-лосс, тейк-профит, комиссию или авторасчет.
+6. Добавьте комментарий.
+7. Бот сохранит сделку и покажет расчет риска и комиссии.
 
-> Чтобы кнопки admin panel и текущий build version появились, напишите `/start` в личном чате с ботом. В канале сигналы публикуются через `TELEGRAM_CHAT_ID`, но панель управления показывается только личному `TELEGRAM_ADMIN_ID`.
+## База данных
 
-## 🔒 Безопасность
+SQLite создается автоматически. Активные таблицы:
 
-- API Secret никогда не логируется
-- Реальная торговля отключена по умолчанию (`LIVE_TRADING=false`)
-- Retry при ошибках API (3 попытки с экспоненциальной задержкой)
-- Все непойманные ошибки отправляются в Telegram admin
-- Защита от дублирования позиций по одному инструменту
+- `users`
+- `settings`
+- `instruments`
+- `trades`
+- `positions`
+- `portfolio_snapshots`
+- `broker_fees`
+- `ai_reviews`
 
-## 📈 Правила риск-менеджмента
+## Безопасность
 
-1. Риск на сделку ≤ 1% от депозита
-2. Максимум 3 открытые сделки
-3. После 3 убытков подряд — пауза 24 часа
-4. Дневной убыток > 3% — стоп до следующего дня
-5. Минимальный Risk/Reward = 1:2
-6. Стоп не дальше 3% от входа
-7. Нет усреднения убыточных позиций
-8. Нет двух позиций по одному инструменту
-
-## ⚠️ Дисклеймер
-
-Бот не гарантирует прибыль. Торговля криптовалютами сопряжена с высоким риском. Используйте только те средства, потерю которых вы можете себе позволить. Это инструмент для обучения и тестирования стратегий.
-
-## New Telegram Commands
-- `/winrate` — winrate and PnL by symbol.
-- `/market` — daily rule-based market summary.
-- `/mode` — current mode + live/paper flags.
-- `/filters` — active filter thresholds.
-- `/analyze` — error/learning analysis.
-- `/pause` `/resume` — manual control.
-
-## New ENV Variables
-- `MIN_ATR_PERCENT=0.2`
-- `MAX_ATR_PERCENT=3`
-- `MIN_SIGNAL_CONFIDENCE=6`
-- `AUTO_OPTIMIZE=false`
-- `DEFENSIVE_MODE_DRAWDOWN=-5`
-
-## 🤖 AI Signal Engine Upgrade
-
-Бот работает как paper-first crypto signal engine: анализирует EMA/RSI/MACD/ATR/volume, фильтрует FOMO/волатильность/слабый объем и публикует только сигналы, прошедшие quality threshold.
-
-### Paper trading warning
-
-- `LIVE_TRADING=false` по умолчанию.
-- Если OKX ключи пустые или неполные, бот принудительно остается в paper mode.
-- Live trading не включается автоматически.
-- Telegram token и OKX API keys не логируются.
-
-### Lifecycle сделок
-
-Канал получает события:
-
-- `PAPER TRADE OPENED` / `LIVE TRADE OPENED`
-- `TP1 HIT`, `TP2 HIT`, `TP3 HIT`
-- перенос SL в breakeven
-- partial close / progress по целям
-- `TRADE CLOSED BY PLAN`
-- `TRADE CLOSED BY STOP`
-- `TRADE CLOSED AT BREAKEVEN`
-
-SQLite хранит progress сделки: `tp1_hit_at`, `tp2_hit_at`, `tp3_hit_at`, `breakeven_moved_at`, `close_reason`, `final_pnl`, `current_pnl`, `progress_json`.
-
-### Quality filters
-
-- Confidence score учитывает EMA trend, RSI, MACD, volume, ATR, breakout, multi-timeframe agreement и RR.
-- Anti-FOMO filter отклоняет late entry, extended move, fomo entry и плохой RR.
-- Volume filter отклоняет слабый объем по quality mode.
-- Volatility filter отклоняет слишком низкий/высокий ATR.
-
-### Market personality
-
-Стиль канала: «Отскок мёртвой кошки» — мрачноватый, ироничный, трейдерский, без мем-помойки. Комментарии находятся в `src/utils/wittyComments.ts`.
-
-### Admin panel
-
-`/start` в личном чате admin открывает inline keyboard:
-
-- 📊 Статистика
-- 📂 Позиции
-- 📈 Winrate
-- 🧠 Анализ
-- 📄 Отчет
-- 🚫 Rejects
-- 🌍 Market
-- ⏸ Пауза
-- ▶️ Resume
-- ⚙️ Режим
-- 🛡 Риски
-- 💓 Health
-- 📜 Последние сделки
-- 📡 Scan now
-- 🧾 Логи
-- 🧠 Версия
-
-Канал получает только сигналы/lifecycle/summary. Admin actions отвечают в личный чат admin.
-
-### Дополнительные команды
-
-- `/winrate` — winrate и PnL по монетам.
-- `/market` — rule-based AI market summary.
-- `/rejects` — статистика отклоненных сигналов.
-- `/filters` — активные thresholds.
-- `/health` — heartbeat/status.
-- `/analyze` — ML/error analysis.
-
-### Дополнительные ENV
-
-| Переменная | По умолчанию | Описание |
-|---|---:|---|
-| `MIN_ATR_PERCENT` | `0.2` | Минимальный ATR%, ниже рынок считается мертвым |
-| `MAX_ATR_PERCENT` | `3` | Максимальный ATR%, выше риск выноса |
-| `MIN_SIGNAL_CONFIDENCE` | `7` | Минимальный confidence score |
-| `MIN_VOLUME_MULTIPLIER` | `1.2` | Volume threshold для high-quality режима |
-| `QUALITY_MODE` | `high` | `low`, `normal`, `high` |
-| `AUTO_OPTIMIZE` | `false` | Флаг для будущей авто-оптимизации |
-| `DEFENSIVE_MODE_DRAWDOWN` | `5` | Пауза/defensive mode при просадке хуже -5% |
-| `SEND_STARTUP_TO_CHANNEL` | `false` | Если `true`, startup/restart уведомление дополнительно уйдет в канал; по умолчанию канал не засоряется |
+- Автоматическая торговля отключена полностью.
+- Нет broker execution API и режимов demo/live исполнения.
+- Бот не отправляет заявки брокеру и не подключается к внешним API исполнения сделок.
+- Любой анализ сопровождается предупреждением: «Это не инвестиционная рекомендация».
