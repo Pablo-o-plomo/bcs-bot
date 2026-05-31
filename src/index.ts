@@ -12,43 +12,34 @@ import { BUILD_VERSION } from './version';
 
 async function bootstrap(): Promise<void> {
   fs.mkdirSync(path.join(process.cwd(), 'logs'), { recursive: true });
-
-  logger.info('🚀 Starting BCS Trading Assistant...');
-  logger.info('   Mode: analytics-only, no automatic trading');
-  logger.info(`   Instruments: ${config.trading.instruments.join(', ')}`);
+  logger.info('🚀 Starting BCS Assistant Bot...');
+  logger.info(`   Broker: ${config.broker}`);
+  logger.info(`   Auto trading: ${config.autoTrading ? 'enabled (not implemented)' : 'disabled'}`);
+  logger.info(`   MOEX enabled: ${config.moex.enabled}`);
 
   initDb();
   initTelegramBot();
 
   const app = express();
-  app.get('/health', (_, res) => res.json({ status: 'ok', broker: config.broker, mode: 'analytics-only', build: BUILD_VERSION }));
+  app.get('/health', (_, res) => res.json({
+    status: 'ok',
+    broker: config.broker,
+    autoTrading: false,
+    moexEnabled: config.moex.enabled,
+    build: BUILD_VERSION,
+  }));
   app.listen(config.server.port, () => logger.info(`🌐 Health check: http://localhost:${config.server.port}/health`));
 
-  setupSchedulers();
+  cron.schedule('55 23 * * *', async () => {
+    if (config.telegram.chatId || config.telegram.adminId) await broadcastMessage(generateDailyReport());
+  });
 
-  const startupMessage = `✅ BCS Trading Assistant restarted\nMode: analytics-only\nBuild: ${BUILD_VERSION}\n\n⚠️ Это не инвестиционная рекомендация. Автоторговля отключена.`;
-  await sendAdminMessage(startupMessage).catch((err: any) => logger.warn(`Failed to send startup notification: ${err.message}`));
-  if (config.telegram.sendStartupToChannel) await broadcastMessage(startupMessage);
-
+  await sendAdminMessage(`✅ BCS Assistant Bot restarted\nBuild: ${BUILD_VERSION}\nАвтоторговля отключена.\n\n⚠️ Это не инвестиционная рекомендация.`).catch((err: any) => logger.warn(`Startup notification failed: ${err.message}`));
   logger.info('✅ Bot fully initialized');
 }
 
-function setupSchedulers(): void {
-  cron.schedule('55 23 * * *', async () => {
-    const target = config.telegram.chatId || config.telegram.adminId;
-    if (!target) return;
-    await broadcastMessage(generateDailyReport());
-  });
-  logger.info('⏰ Schedulers started: daily report at 23:55 UTC');
-}
-
-process.on('unhandledRejection', (reason: any) => {
-  logger.error(`Unhandled rejection: ${reason?.message || reason}`);
-});
-
-process.on('uncaughtException', err => {
-  logger.error(`Uncaught exception: ${err.message}`);
-});
+process.on('unhandledRejection', (reason: any) => logger.error(`Unhandled rejection: ${reason?.message || reason}`));
+process.on('uncaughtException', err => logger.error(`Uncaught exception: ${err.message}`));
 
 bootstrap().catch(err => {
   logger.error(`Fatal startup error: ${err.message}`);

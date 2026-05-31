@@ -1,7 +1,7 @@
 {
   "name": "bcs-bot",
   "version": "1.0.0-bcs",
-  "description": "BCS Trading Assistant Telegram bot for analytics, trade journal and risk management",
+  "description": "BCS Assistant Bot: Telegram trade diary, MOEX analysis, risk management and BCS commissions",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -11,17 +11,17 @@
   },
   "dependencies": {
     "axios": "^1.7.2",
-    "better-sqlite3": "^9.6.0",
-    "debug": "^2.6.9",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
-    "technicalindicators": "^3.1.0",
     "winston": "^3.13.0"
   },
   "devDependencies": {
     "tsx": "^4.15.6",
     "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

@@ -21,4 +21,13 @@ declare module 'node-telegram-bot-api' {
   }
   export = TelegramBot;
 }
-declare module 'better-sqlite3' { const Database: any; namespace Database { type Database = any; } export = Database; }
+declare const URLSearchParams: any;
+declare module 'axios' {
+  const axios: {
+    post: <T = any>(url: string, data?: any, config?: any) => Promise<{ data: T }>;
+    get: <T = any>(url: string, config?: any) => Promise<{ data: T }>;
+  };
+  export default axios;
+}
+
+declare module 'node:sqlite' { export const DatabaseSync: any; }

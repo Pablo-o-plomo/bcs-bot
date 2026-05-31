@@ -1,1 +1,1 @@
-export const BUILD_VERSION = '1.0.0-bcs-analytics';
+export const BUILD_VERSION = '1.1.0-bcs-assistant';

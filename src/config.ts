@@ -12,40 +12,43 @@ function numberEnv(key: string, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
-const botToken = optionalEnv('BOT_TOKEN', optionalEnv('TELEGRAM_BOT_TOKEN', ''));
-const adminId = optionalEnv('ADMIN_ID', optionalEnv('TELEGRAM_ADMIN_ID', ''));
+function booleanEnv(key: string, fallback: boolean): boolean {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+}
 
 export const config = {
   telegram: {
-    botToken,
-    adminId,
-    chatId: optionalEnv('TELEGRAM_CHAT_ID', adminId),
-    sendStartupToChannel: optionalEnv('SEND_STARTUP_TO_CHANNEL', 'false') === 'true',
+    botToken: optionalEnv('TELEGRAM_BOT_TOKEN', optionalEnv('BOT_TOKEN', '')),
+    adminId: optionalEnv('TELEGRAM_ADMIN_ID', optionalEnv('ADMIN_ID', '')),
+    chatId: optionalEnv('TELEGRAM_CHAT_ID', optionalEnv('TELEGRAM_ADMIN_ID', optionalEnv('ADMIN_ID', ''))),
+    sendStartupToChannel: booleanEnv('SEND_STARTUP_TO_CHANNEL', false),
+  },
+  database: {
+    url: optionalEnv('DATABASE_URL', './bcs.db'),
+  },
+  broker: optionalEnv('BROKER', 'BCS'),
+  autoTrading: booleanEnv('AUTO_TRADING', false),
+  moex: {
+    enabled: booleanEnv('MOEX_ENABLED', true),
+    baseUrl: optionalEnv('MOEX_ISS_BASE_URL', 'https://iss.moex.com/iss'),
   },
   openai: {
     apiKey: optionalEnv('OPENAI_API_KEY', ''),
   },
-  broker: optionalEnv('BROKER', 'BCS'),
-  database: {
-    url: optionalEnv('DATABASE_URL', './bcs-trading.db'),
-  },
   trading: {
-    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 100000),
-    riskPerTrade: numberEnv('DEFAULT_RISK_PER_TRADE', 1),
+    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 300000),
+    riskPerTrade: numberEnv('RISK_PER_TRADE', numberEnv('DEFAULT_RISK_PER_TRADE', 1)),
     maxDailyLoss: numberEnv('MAX_DAILY_LOSS', 3),
-    maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 10),
-    autoOptimize: optionalEnv('AUTO_OPTIMIZE', 'false') === 'true',
-    instruments: optionalEnv('INSTRUMENTS', 'SBER,GAZP,LKOH,IMOEX,Si,BR,GOLD')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean),
+    maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 5),
+    minSignalConfidence: numberEnv('MIN_SIGNAL_CONFIDENCE', 6),
   },
   commissions: {
-    monthlyServiceRub: numberEnv('BCS_MONTHLY_SERVICE_RUB', 299),
-    securitiesRatePercent: numberEnv('BCS_SECURITIES_RATE_PERCENT', 0.04),
-    currencyRatePercent: numberEnv('BCS_CURRENCY_RATE_PERCENT', 0.04),
-    currencyPurchaseExtraPercent: numberEnv('BCS_CURRENCY_PURCHASE_EXTRA_PERCENT', 0.1),
-    futuresFeeRubPerContract: numberEnv('BCS_FUTURES_FEE_RUB_PER_CONTRACT', 1.2),
+    stockFeePercent: numberEnv('BCS_STOCK_FEE_PERCENT', 0.04),
+    currencyFeePercent: numberEnv('BCS_CURRENCY_FEE_PERCENT', 0.04),
+    extraCurrencyBuyFeePercent: numberEnv('BCS_EXTRA_CURRENCY_BUY_FEE_PERCENT', 0.1),
+    futuresFeePerContract: numberEnv('BCS_FUTURES_FEE_PER_CONTRACT', 1.2),
     optionsMaxPercent: numberEnv('BCS_OPTIONS_MAX_PERCENT', 1),
   },
   server: {
