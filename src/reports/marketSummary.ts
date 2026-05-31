@@ -1,27 +1,20 @@
-import { getRecentSignals, getLastNTrades, getRejectCountSince } from '../database/db';
-import { getMarketComment } from '../utils/wittyComments';
+import { getLastNTrades, getOpenTrades } from '../database/db';
 
 export function generateMarketSummary(): string {
-  const signals = getRecentSignals(30);
+  const open = getOpenTrades();
   const closed = getLastNTrades(30);
-  const rejected = getRejectCountSince(24);
-  const longCount = signals.filter(s => s.direction === 'LONG').length;
-  const avgConfidence = signals.length ? signals.reduce((a, s) => a + s.confidence, 0) / signals.length : 0;
-  const strongest = signals.filter(s => s.confidence >= avgConfidence).slice(0, 5).map(s => s.symbol.replace('-USDT-SWAP', ''));
-  const weakest = closed.filter(t => (t.pnlPercent ?? 0) < 0).slice(0, 5).map(t => t.symbol.replace('-USDT-SWAP', ''));
-  const highVol = signals.filter(s => s.indicatorSummary?.atrPercent >= 1.5).map(s => s.symbol.replace('-USDT-SWAP', ''));
-  const mode = avgConfidence >= 8 && rejected < 20 ? 'агрессивный' : avgConfidence >= 6 ? 'нормальный' : 'защитный';
+  const winners = closed.filter(t => (t.pnlRub ?? 0) > 0).length;
+  const winrate = closed.length ? (winners / closed.length) * 100 : 0;
+  const symbols = Array.from(new Set([...open, ...closed].map(t => t.symbol))).slice(0, 8);
 
-  return `
-🌍 <b>Сводка рынка</b>
+  return `🌍 <b>Сводка портфеля БКС</b>
 
-Тренд рынка: <b>${longCount >= signals.length / 2 ? 'бычий' : 'медвежий'}</b>
-Сильнее выглядят: ${strongest.join(', ') || 'нет данных'}
-Слабее выглядят: ${weakest.join(', ') || 'нет данных'}
-Волатильность: ${highVol.length ? `высокая (${highVol.join(', ')})` : 'нормальная'}
-Отклонено фильтрами за 24ч: <b>${rejected}</b>
-Рекомендация: <b>${mode}</b>
+Инструменты в журнале: ${symbols.join(', ') || 'нет данных'}
+Открытых позиций: <b>${open.length}</b>
+Закрытых сделок в выборке: <b>${closed.length}</b>
+Winrate по последним сделкам: <b>${winrate.toFixed(1)}%</b>
 
-🗣 <i>${getMarketComment(signals.length + rejected)}</i>
-`.trim();
+Рекомендация: проверяйте риск до входа и не превышайте лимит на сделку.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
 }

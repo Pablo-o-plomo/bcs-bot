@@ -1,7 +1,7 @@
 {
-  "name": "okx-trading-bot",
-  "version": "2.0.0-buttons-fix",
-  "description": "OKX Trading Bot with Telegram notifications",
+  "name": "bcs-bot",
+  "version": "1.0.0-bcs",
+  "description": "BCS Trading Assistant Telegram bot for analytics, trade journal and risk management",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -21,11 +21,6 @@
     "winston": "^3.13.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.10",
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.14.0",
-    "@types/node-cron": "^3.0.11",
-    "@types/node-telegram-bot-api": "^0.64.7",
     "tsx": "^4.15.6",
     "typescript": "^5.4.5"
   }
