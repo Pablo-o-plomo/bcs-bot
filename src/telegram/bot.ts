@@ -384,8 +384,22 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
     try {
       const portfolio = await bcsApiClient.getPortfolio();
       const moneyLines = formatCashBalances(portfolio.money.cash);
-      const lines = portfolio.positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
-      return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API</b>\n\nБаланс: <b>${formatRub(portfolio.money.balance)}</b>\nСвободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>\n\n💰 <b>Деньги:</b>\n${moneyLines}\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+      const positionBlock = formatBcsPortfolioPositions(portfolio.positions, portfolio.money.cash.length > 0);
+      return `📊 <b>Реальный портфель</b>
+Источник: <b>БКС API</b>
+
+Баланс: <b>${formatRub(portfolio.money.balance)}</b>
+Свободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>
+Стоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>
+Дневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>
+Общий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>
+
+💰 <b>Деньги:</b>
+${moneyLines}
+
+${positionBlock}
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
     } catch (err: any) {
       logger.warn(`Real portfolio fallback: ${err.message}`);
     }
@@ -443,6 +457,23 @@ async function handleDebugPortfolio(chatIdValue: string, telegramId: string): Pr
     logger.error(`BCS portfolio debug error: ${message}`);
     await bot.sendMessage(chatIdValue, `❌ Ошибка debug_portfolio: ${escapeHtml(message)}`, { parse_mode: 'HTML' }).catch(() => undefined);
   }
+}
+
+
+function formatBcsPortfolioPositions(positions: Array<{ ticker: string; name?: string; quantity: number; currentPrice: number; currentValueRub?: number; dailyPL?: number; dailyPercentPL?: number; unrealizedPL?: number; unrealizedPercentPL?: number; unrealizedPnl: number }>, hasMoney: boolean): string {
+  if (!positions.length) return hasMoney ? 'Позиции: нет бумаг, только денежный остаток.' : 'Позиции:\nнет данных';
+  return `Позиции:\n${positions.map(position => [
+    `• ${position.ticker}${position.name ? ` — ${position.name}` : ''}`,
+    `  Кол-во: ${formatNumber(position.quantity)}`,
+    `  Цена: ${formatRub(position.currentPrice)}`,
+    `  Стоимость: ${formatRub(position.currentValueRub ?? position.currentPrice * position.quantity)}`,
+    `  День: ${formatRub(position.dailyPL ?? 0)} / ${formatPercent(position.dailyPercentPL ?? 0)}`,
+    `  P&L: ${formatRub(position.unrealizedPL ?? position.unrealizedPnl)} / ${formatPercent(position.unrealizedPercentPL ?? 0)}`,
+  ].join('\n')).join('\n')}`;
+}
+
+function formatPercent(value: number): string {
+  return `${formatNumber(value)}%`;
 }
 
 function formatCashBalances(cash: Array<{ currency: string; available: number; blocked: number; total: number }>, includeMajorCurrencies = false): string {
