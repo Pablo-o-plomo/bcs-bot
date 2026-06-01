@@ -27,6 +27,8 @@ export interface BcsCashBalance {
   available: number;
   blocked: number;
   total: number;
+  currentValueRub?: number;
+  term?: string;
 }
 
 export interface BcsLimits {
@@ -38,10 +40,18 @@ export interface BcsLimits {
 export interface BcsPosition {
   ticker: string;
   name?: string;
+  exchange?: string;
   quantity: number;
   averagePrice: number;
   currentPrice: number;
+  currentValueRub?: number;
+  balanceValueRub?: number;
+  dailyPL?: number;
+  dailyPercentPL?: number;
+  unrealizedPL?: number;
+  unrealizedPercentPL?: number;
   unrealizedPnl: number;
+  portfolioShare?: number;
   portfolioSharePercent: number;
   instrumentType?: string;
   classCode?: string;
