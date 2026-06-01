@@ -11,10 +11,13 @@ export const callbacks: Record<string, string> = {
   market: '/market',
   news: '/news',
   help: '/help',
+  diary_menu: '/diary_menu',
+  diary: '/diary_menu',
   daily_report_menu: '/daily_report_menu',
   daily_report: '/daily_report_menu',
   settings_menu: '/settings_menu',
   settings: '/settings_menu',
+  api_status: '/api_status',
   menu_back: '/menu',
   menu_home: '/menu',
 };
@@ -31,7 +34,8 @@ export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'
     inline_keyboard: [
       [{ text: '📊 Портфель', callback_data: 'portfolio' }, { text: '💰 Остатки', callback_data: 'limits' }],
       [{ text: '🛡️ Риск', callback_data: 'risk_menu' }, { text: '🧠 AI Анализ', callback_data: 'ai_analysis' }],
-      [{ text: '📅 Дневной отчет', callback_data: 'daily_report_menu' }, { text: '⚙️ Настройки', callback_data: 'settings_menu' }],
+      [{ text: '📋 Дневник сделок', callback_data: 'diary_menu' }, { text: '📅 Дневной отчет', callback_data: 'daily_report_menu' }],
+      [{ text: '⚙️ Настройки', callback_data: 'settings_menu' }, { text: '🔌 Статус BCS API', callback_data: 'api_status' }],
     ],
   };
 }
