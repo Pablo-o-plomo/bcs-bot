@@ -169,15 +169,15 @@ async function renderMenuScreen(chatIdValue: string, messageId: number, command:
 }
 
 async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
-  if (command === '/portfolio' || command === '/real_portfolio') return buildRealPortfolio(telegramId);
-  if (command === '/limits') return buildLimits(telegramId);
+  if (command === '/portfolio' || command === '/real_portfolio') return buildMenuPortfolioScreen(telegramId);
+  if (command === '/limits') return buildMenuLimitsScreen(telegramId);
   if (command === '/risk_menu') return buildRiskManagement(telegramId);
   if (command === '/ai_analysis' || command === '/market' || command === '/news') return buildSectionInDevelopment();
   if (command === '/help') return buildHelp();
   if (command === '/diary_menu') return buildDiary(telegramId);
   if (command === '/daily_report_menu') return buildReport(telegramId, 'day');
   if (command === '/settings_menu') return buildSettingsScreen(telegramId);
-  if (command === '/api_status') return buildApiStatus();
+  if (command === '/api_status') return isAdminAllowed(telegramId) ? buildApiStatus() : buildUiScreen('🔌 <b>Статус BCS API</b>', 'BCS Assistant Bot', '⛔️ Раздел доступен только администратору.', new Date().toISOString(), false);
   return buildWelcomeScreen();
 }
 
@@ -189,6 +189,7 @@ async function editMenuMessage(chatIdValue: string, messageId: number, text: str
       chat_id: chatIdValue,
       message_id: messageId,
       parse_mode: 'HTML',
+      reply_markup: replyMarkup,
       disable_web_page_preview: true,
     });
     textEdited = true;
@@ -470,6 +471,61 @@ async function processAiReview(chat: string, telegramId: string, text: string): 
 }
 
 
+async function buildMenuPortfolioScreen(telegramId: string): Promise<string> {
+  if (config.bcsApi.enabled) {
+    try {
+      const portfolio = await bcsApiClient.getPortfolio();
+      const moneyLines = formatCashBalances(portfolio.money.cash);
+      const positionBlock = formatBcsPortfolioPositions(portfolio.positions, portfolio.money.cash.length > 0);
+      const body = `Баланс: <b>${formatRub(portfolio.money.balance)}</b>
+Свободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>
+Стоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>
+Дневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>
+Общий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>
+
+💰 <b>Деньги:</b>
+${moneyLines}
+
+${positionBlock}`;
+      return buildUiScreen('📊 <b>Портфель</b>', 'BCS API', body, portfolio.updatedAt);
+    } catch (err: any) {
+      logger.warn(`Menu portfolio BCS fallback: ${err.message}`);
+    }
+  }
+
+  const fallbackPrefix = config.bcsApi.enabled ? '⚠️ BCS API временно недоступен\nПоказываю локальные данные.\n\n' : '';
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  const positions = getBcsPositions();
+  if (snapshot) {
+    const lines = positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)}`).join('\n') || 'нет данных';
+    const body = `${fallbackPrefix}Баланс: <b>${formatRub(snapshot.balance)}</b>
+Свободные средства: <b>${formatRub(snapshot.freeCash)}</b>
+Стоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>
+Дневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>
+Общий P&L: <b>${formatRub(snapshot.totalPnl)}</b>
+
+Позиции:
+${lines}`;
+    return buildUiScreen('📊 <b>Портфель</b>', 'BCS API (последний sync)', body, snapshot.syncedAt ?? new Date().toISOString());
+  }
+  return buildUiScreen('📊 <b>Портфель</b>', 'Локальная база', `${fallbackPrefix}${buildPortfolio(telegramId)}`);
+}
+
+async function buildMenuLimitsScreen(telegramId: string): Promise<string> {
+  if (!config.bcsApi.enabled) return buildUiScreen('💰 <b>Остатки</b>', 'BCS API', 'BCS API отключен.', new Date().toISOString(), false);
+  try {
+    const limits = await bcsApiClient.getLimits();
+    const body = limits.cash.length ? formatCashBalances(limits.cash) : 'BCS API вернул limits, но денежные остатки не найдены. Выполните /debug_limits.';
+    return buildUiScreen('💰 <b>Остатки</b>', 'BCS API limits', body, limits.updatedAt, false);
+  } catch (err: any) {
+    logger.warn(`Menu limits BCS fallback: ${err.message}`);
+    return buildUiScreen('💰 <b>Остатки</b>', 'Локальные данные', `⚠️ BCS API временно недоступен
+Показываю локальные данные.
+
+${err.message}`, new Date().toISOString(), false);
+  }
+}
+
 async function buildRealPortfolio(telegramId: string): Promise<string> {
   if (config.bcsApi.enabled) {
     try {
@@ -734,23 +790,6 @@ function buildSettingsScreen(telegramId: string): string {
 Акции: <b>${fee.stockFeePercent}%</b>
 Инструменты: <code>${getInstruments().map(i => i.ticker).join(', ')}</code>`;
   return buildUiScreen('⚙️ <b>Настройки</b>', 'Локальные настройки', body, new Date().toISOString(), false);
-}
-
-
-function buildSettingsScreen(telegramId: string): string {
-  const s = getUserSettings(telegramId);
-  const fee = getBrokerFee(s.userId);
-  return `⚙️ <b>Настройки</b>
-━━━━━━━━━━━━━━
-
-Депозит: <b>${s.depositRub.toFixed(2)} ₽</b>
-Риск на сделку: <b>${s.riskPerTrade.toFixed(2)}%</b>
-Макс. дневная просадка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
-Макс. открытых позиций: <b>${s.maxOpenPositions}</b>
-
-Тариф комиссии: <b>${fee.tariffName}</b>
-Акции: <b>${fee.stockFeePercent}%</b>
-Инструменты: <code>${getInstruments().map(i => i.ticker).join(', ')}</code>`;
 }
 
 async function sendSettings(chat: string, telegramId: string): Promise<void> {
