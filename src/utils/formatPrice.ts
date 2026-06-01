@@ -1,35 +1,27 @@
 import type { Direction } from '../database/models';
 
-export function decimalsForSymbol(symbol: string): number {
-  if (symbol.startsWith('BTC-') || symbol.startsWith('ETH-')) return 2;
-  if (symbol.startsWith('SOL-') || symbol.startsWith('TON-')) return 4;
-  if (symbol.startsWith('XRP-') || symbol.startsWith('DOGE-')) return 5;
-  return 6;
+export function getPriceDecimals(symbol: string): number {
+  if (symbol.toUpperCase().includes('SI')) return 0;
+  return 2;
 }
 
-export function formatPrice(symbol: string, value: number | undefined | null): string {
-  if (value === undefined || value === null || !Number.isFinite(value)) return 'нет данных';
-  return value.toFixed(decimalsForSymbol(symbol));
+export function formatPrice(symbol: string, price: number): string {
+  return price.toFixed(getPriceDecimals(symbol));
 }
 
-export function formatPercent(value: number | undefined | null, digits = 2): string {
-  if (value === undefined || value === null || !Number.isFinite(value)) return 'нет данных';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}%`;
+export function formatPercent(value: number): string {
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
 }
 
-export function formatUnsignedPercent(value: number | undefined | null, digits = 2): string {
-  if (value === undefined || value === null || !Number.isFinite(value)) return 'нет данных';
-  return `${value.toFixed(digits)}%`;
+export function formatUnsignedPercent(value: number): string {
+  return `${Math.abs(value).toFixed(2)}%`;
 }
 
 export function formatDirection(direction: Direction): string {
-  return direction === 'LONG' ? '🟢 ЛОНГ' : '🔴 ШОРТ';
-}
-
-export function formatTradingViewSymbol(symbol: string): string {
-  return `OKX:${symbol.replace('-USDT-SWAP', 'USDT.P').replace(/-/g, '')}`;
+  return direction === 'LONG' ? '🟢 LONG' : '🔴 SHORT';
 }
 
 export function formatTradingViewLink(symbol: string): string {
-  return `https://www.tradingview.com/chart/?symbol=${formatTradingViewSymbol(symbol)}`;
+  return `MOEX:${symbol.toUpperCase()}`;
 }
