@@ -31,6 +31,7 @@ function logBcsApiConfig(): void {
   logger.info(`   orderExecution: ${config.allowOrderExecution}`);
   logger.info(`   executionMode: ${config.execution.mode}`);
   logger.info(`   baseUrl: ${config.bcsApi.baseUrl ? 'present' : 'missing'}`);
+  logger.info(`   authUrl: ${config.bcsApi.authUrl ? 'present' : 'fallback'}`);
 }
 
 async function pingBcsApiOnStartup(): Promise<void> {

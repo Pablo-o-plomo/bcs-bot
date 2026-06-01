@@ -53,6 +53,7 @@ BCS_API_TOKEN=
 BCS_ACCOUNT_ID=
 BCS_CLIENT_ID=trade-api-read
 BCS_API_BASE_URL=https://be.broker.ru
+BCS_AUTH_URL=https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token
 
 DEFAULT_DEPOSIT_RUB=300000
 RISK_PER_TRADE=1
@@ -98,9 +99,11 @@ GET /health
    - `BCS_API_TOKEN=<refresh token>`
    - `BCS_ACCOUNT_ID=<id счета>`
    - `BCS_CLIENT_ID=trade-api-read`
+   - `BCS_API_BASE_URL=https://be.broker.ru`
+   - `BCS_AUTH_URL=https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token`
    - `READ_ONLY_MODE=true`
    - `ALLOW_ORDER_EXECUTION=false`
-3. При старте бот выводит sanitized diagnostics: `BCS_API_ENABLED`, token `present/missing`, masked `BCS_ACCOUNT_ID`, `READ_ONLY_MODE`, `ALLOW_ORDER_EXECUTION`, `EXECUTION_MODE`, base URL `present/missing`; затем вызывает `BcsApiClient.connect()` и read-only `ping()` через портфель, пишет `✅ BCS API ping successful` или `⚠️ BCS API ping failed: ...` без токена.
+3. При старте бот выводит sanitized diagnostics: `BCS_API_ENABLED`, token `present/missing`, masked `BCS_ACCOUNT_ID`, `READ_ONLY_MODE`, `ALLOW_ORDER_EXECUTION`, `EXECUTION_MODE`, base URL/auth URL `present/missing`; затем вызывает `BcsApiClient.connect()` и read-only `ping()` через портфель, пишет `✅ BCS API ping successful` или `⚠️ BCS API ping failed: ...` без токена.
 4. Бот никогда не выводит и не логирует токен. Методы `placeOrder()`, `cancelOrder()` и `executeOrder()` в READ ONLY режиме выбрасывают `READ ONLY MODE ENABLED`.
 5. Если API недоступен, бот не падает: Telegram показывает `⚠️ BCS API временно недоступен. Показываю локальные данные.`, последний sync или локальный дневник.
 

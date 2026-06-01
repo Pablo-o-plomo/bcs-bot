@@ -107,6 +107,8 @@ function createTables(): void {
       FOREIGN KEY (tradeId) REFERENCES trades(id)
     );
 
+
+
     CREATE TABLE IF NOT EXISTS bcs_portfolio_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       source TEXT NOT NULL DEFAULT 'BCS API',
@@ -324,6 +326,7 @@ export function getRejectStatsBySymbol(): Array<{ symbol: string; count: number 
 export function getRejectStatsByTimeframe(): Array<{ timeframe: string; count: number }> { return []; }
 export function getRejectCountSince(): number { return 0; }
 export function getRecentSignals(): any[] { return []; }
+
 
 export function saveBcsPortfolioSnapshot(portfolio: import('../broker/bcs/types').BcsPortfolio): void {
   db.prepare('INSERT INTO bcs_portfolio_snapshots (balance, freeCash, portfolioValue, dayPnl, totalPnl, currency) VALUES (?, ?, ?, ?, ?, ?)')
