@@ -5,6 +5,8 @@ import { BUILD_VERSION } from '../version';
 import { getMainKeyboard, handleMenuCallback, setAdminCommandHandler } from './adminMenu';
 import { calculateBcsCommission } from '../broker/bcsCommission';
 import { bcsApiClient } from '../broker/bcs/client';
+import { buildRawDebug } from '../broker/bcs/limits';
+import { sanitizeSecret } from '../broker/bcs/errors';
 import { borrowAvailable } from '../broker/bcs/shortable';
 import { evaluateExecution } from '../execution/engine';
 import { formatManualConfirm } from '../execution/confirmFlow';
@@ -55,6 +57,7 @@ function registerCommands(): void {
   bot.onText(/^\/portfolio/, msg => handleCommand(chatId(msg), '/portfolio', fromId(msg)));
   bot.onText(/^\/limits/, msg => handleCommand(chatId(msg), '/limits', fromId(msg)));
   bot.onText(/^\/debug_limits/, msg => handleCommand(chatId(msg), '/debug_limits', fromId(msg)));
+  bot.onText(/^\/debug_portfolio|^\/debugportfolio/, msg => handleCommand(chatId(msg), '/debug_portfolio', fromId(msg)));
   bot.onText(/^\/add_trade/, msg => handleCommand(chatId(msg), '/add_trade', fromId(msg)));
   bot.onText(/^\/analyze(?:\s+(.+))?/, (msg, match) => handleAnalyze(msg, match?.[1]));
   bot.onText(/^\/ai_review/, msg => handleCommand(chatId(msg), '/ai_review', fromId(msg)));
@@ -112,6 +115,7 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   }
   if (command === '/limits') return send(chatIdValue, await buildLimits(telegramId));
   if (command === '/debug_limits') return send(chatIdValue, await buildDebugLimits(telegramId));
+  if (command === '/debug_portfolio') return handleDebugPortfolio(chatIdValue, telegramId);
   if (command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
   if (command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
   if (command === '/risk_status') return send(chatIdValue, buildRiskStatus(telegramId));
@@ -421,6 +425,23 @@ async function buildDebugLimits(telegramId: string): Promise<string> {
   } catch (err: any) {
     logger.warn(`BCS debug limits failed: ${err.message}`);
     return `🔎 <b>Debug limits</b>\n\n⚠️ BCS API временно недоступен.\n${err.message}`;
+  }
+}
+
+
+async function handleDebugPortfolio(chatIdValue: string, telegramId: string): Promise<void> {
+  try {
+    logger.info('Telegram command received: debug_portfolio');
+    await bot.sendMessage(chatIdValue, '⏳ Запрашиваю portfolio из BCS API...');
+    logger.info('BCS portfolio debug request started');
+    const raw = await bcsApiClient.request<any>('GET', '/trade-api-bff-portfolio/api/v1/portfolio', undefined, config.bcsApi.accountId ? { accountId: config.bcsApi.accountId } : undefined);
+    const debugJson = escapeHtml(buildRawDebug(raw)).slice(0, 3500);
+    logger.info('BCS portfolio debug success');
+    await bot.sendMessage(chatIdValue, `🔎 <b>Debug portfolio</b>\nИсточник: <b>БКС API portfolio</b>\n\n<pre>${debugJson}</pre>`, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (err: any) {
+    const message = sanitizeSecret(err?.message ?? err);
+    logger.error(`BCS portfolio debug error: ${message}`);
+    await bot.sendMessage(chatIdValue, `❌ Ошибка debug_portfolio: ${escapeHtml(message)}`, { parse_mode: 'HTML' }).catch(() => undefined);
   }
 }
 
