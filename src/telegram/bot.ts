@@ -170,7 +170,7 @@ async function renderMenuScreen(chatIdValue: string, messageId: number, command:
     return;
   }
 
-  let targetMessageId = await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю данные...</b>', getNavigationKeyboard());
+  let targetMessageId = await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю...</b>', getNavigationKeyboard());
   const text = await buildMenuScreenText(command, telegramId);
   targetMessageId = await editMenuMessage(chatIdValue, targetMessageId, text, getMenuKeyboard(command));
   logger.info(`screen_rendered: ${command}`);
@@ -693,7 +693,7 @@ ${body}${showDisclaimer ? '\n\n⚠️ <i>Это не инвестиционна�
 }
 
 function buildSectionInDevelopment(): string {
-  return buildUiScreen('🚧 <b>Раздел в разработке</b>', 'BCS Assistant Bot', '🚧 Раздел в разработке.', new Date().toISOString(), false);
+  return buildUiScreen('🚧 <b>Раздел в разработке</b>', 'BCS Assistant Bot', '🚧 Раздел в разработке', new Date().toISOString(), false);
 }
 
 function buildSubmenuScreen(title: string, body: string): string {
@@ -703,7 +703,7 @@ function buildSubmenuScreen(title: string, body: string): string {
 }
 
 function buildAiSectionInDevelopment(): string {
-  return buildUiScreen('🧠 <b>AI Анализ</b>', 'BCS Assistant Bot', '🚧 Раздел в разработке.', new Date().toISOString(), false);
+  return buildUiScreen('🧠 <b>AI Анализ</b>', 'BCS Assistant Bot', '🚧 Раздел в разработке', new Date().toISOString(), false);
 }
 
 function buildSettingsActionScreen(command: string, telegramId: string): string {

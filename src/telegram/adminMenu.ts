@@ -150,15 +150,46 @@ function getBackHomeKeyboard(parent: string): TelegramBot.SendMessageOptions['re
 
 export async function handleMenuCallback(bot: TelegramBot, query: TelegramBot.CallbackQuery): Promise<boolean> {
   if (!query.data || !query.message) return false;
-  const command = callbacks[query.data];
-  if (!command || !commandHandler) return false;
   logger.info(`callback_received: ${query.data}`);
+  const command = callbacks[query.data];
+  if (!command || !commandHandler) {
+    logger.warn(`callback_unknown: ${query.data}`);
+    await bot.answerCallbackQuery(query.id, { text: 'Неизвестная кнопка' }).catch(() => undefined);
+    await renderUnknownCallback(bot, query.message);
+    return true;
+  }
+
   logger.info(`button_clicked: ${query.data}`);
+  logger.info(`button_action_started: ${query.data}`);
   if (query.data.startsWith('menu_back')) logger.info(`navigation_back: ${query.data}`);
   if (query.data === 'menu_home') logger.info('navigation_home');
   if (command.startsWith('/submenu_')) logger.info(`submenu_opened: ${command}`);
   logger.info(`menu_navigation: ${query.data} -> ${command}`);
   await bot.answerCallbackQuery(query.id, { text: 'OK' });
-  await commandHandler(query.message.chat.id.toString(), command, query.from.id.toString(), query.message.message_id);
+  try {
+    await commandHandler(query.message.chat.id.toString(), command, query.from.id.toString(), query.message.message_id);
+    logger.info(`callback_handled: ${query.data}`);
+  } catch (err: any) {
+    logger.error(`button_action_failed: ${query.data}: ${err?.message ?? err}`);
+    throw err;
+  }
   return true;
+}
+
+async function renderUnknownCallback(bot: TelegramBot, message: TelegramBot.Message): Promise<void> {
+  const text = `⚠️ <b>Неизвестная кнопка.</b>
+
+Вернитесь в главное меню.`;
+  try {
+    await bot.editMessageText(text, {
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(),
+      disable_web_page_preview: true,
+    });
+  } catch (err: any) {
+    logger.warn(`button_action_failed: unknown_callback_render: ${err?.message ?? err}`);
+    await bot.sendMessage(message.chat.id, text, { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
+  }
 }
