@@ -109,6 +109,7 @@ async function handleMenu(msg: TelegramBot.Message): Promise<void> {
 async function openMainMenu(chatIdValue: string): Promise<void> {
   logger.info('menu_opened');
   await bot.sendMessage(chatIdValue, buildWelcomeScreen(), { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
+  logger.info('main_menu_rendered');
 }
 
 function buildWelcomeScreen(): string {
@@ -165,6 +166,7 @@ async function renderMenuScreen(chatIdValue: string, messageId: number, command:
   if (command === '/menu') {
     await editMenuMessage(chatIdValue, messageId, buildWelcomeScreen(), getMenuKeyboard('/menu'));
     logger.info('screen_rendered: main_menu');
+    logger.info('main_menu_rendered');
     return;
   }
 
@@ -172,6 +174,7 @@ async function renderMenuScreen(chatIdValue: string, messageId: number, command:
   const text = await buildMenuScreenText(command, telegramId);
   targetMessageId = await editMenuMessage(chatIdValue, targetMessageId, text, getMenuKeyboard(command));
   logger.info(`screen_rendered: ${command}`);
+  if (command.startsWith('/submenu_')) logger.info(`submenu_rendered: ${command}`);
 }
 
 async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
@@ -181,7 +184,7 @@ async function buildMenuScreenText(command: string, telegramId: string): Promise
   if (command === '/submenu_ai') return buildSubmenuScreen('🧠 <b>AI Анализ</b>', 'AI-разборы портфеля, сделок, риска и рынка.');
   if (command === '/submenu_risk' || command === '/risk_menu') return buildSubmenuScreen('⚠️ <b>Риск</b>', 'Статусы risk/paper/execution/emergency stop и риск-настройки.');
   if (command === '/submenu_reports') return buildSubmenuScreen('📋 <b>Отчеты</b>', 'Дневник сделок, дневные/месячные отчеты, комиссии и экспорт.');
-  if (command === '/submenu_settings' || command === '/settings_menu') return buildSettingsScreen(telegramId);
+  if (command === '/submenu_settings' || command === '/settings_menu' || command === '/settings') return buildSettingsScreen(telegramId);
   if (command === '/portfolio' || command === '/real_portfolio') return buildMenuPortfolioScreen(telegramId);
   if (command === '/limits') return buildMenuLimitsScreen(telegramId);
   if (command === '/api_status') return isAdminAllowed(telegramId) ? buildApiStatus() : buildUiScreen('🔌 <b>Статус BCS API</b>', 'BCS Assistant Bot', '⛔️ Раздел доступен только администратору.', new Date().toISOString(), false);
@@ -690,7 +693,7 @@ ${body}${showDisclaimer ? '\n\n⚠️ <i>Это не инвестиционна�
 }
 
 function buildSectionInDevelopment(): string {
-  return buildUiScreen('🚧 <b>Раздел в разработке</b>', 'BCS Assistant Bot', '🚧 Раздел в разработке', new Date().toISOString(), false);
+  return buildUiScreen('🚧 <b>Раздел в разработке</b>', 'BCS Assistant Bot', '🚧 Раздел в разработке.', new Date().toISOString(), false);
 }
 
 function buildSubmenuScreen(title: string, body: string): string {
@@ -700,7 +703,7 @@ function buildSubmenuScreen(title: string, body: string): string {
 }
 
 function buildAiSectionInDevelopment(): string {
-  return buildUiScreen('🧠 <b>AI Анализ</b>', 'BCS Assistant Bot', '🚧 AI-раздел в разработке. Автоторговля отключена.', new Date().toISOString(), false);
+  return buildUiScreen('🧠 <b>AI Анализ</b>', 'BCS Assistant Bot', '🚧 Раздел в разработке.', new Date().toISOString(), false);
 }
 
 function buildSettingsActionScreen(command: string, telegramId: string): string {

@@ -152,6 +152,7 @@ export async function handleMenuCallback(bot: TelegramBot, query: TelegramBot.Ca
   if (!query.data || !query.message) return false;
   const command = callbacks[query.data];
   if (!command || !commandHandler) return false;
+  logger.info(`callback_received: ${query.data}`);
   logger.info(`button_clicked: ${query.data}`);
   if (query.data.startsWith('menu_back')) logger.info(`navigation_back: ${query.data}`);
   if (query.data === 'menu_home') logger.info('navigation_home');
