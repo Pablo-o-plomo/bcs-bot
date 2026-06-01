@@ -30,11 +30,13 @@ export const callbacks: Record<string, string> = {
   market_refresh: '/market',
 
   ai_analysis: '/ai_analysis',
-  news: '/ai_market_summary',
+  news: '/ai_market',
   ai_portfolio: '/ai_portfolio',
-  ai_trade: '/ai_trade',
+  ai_deal: '/ai_deal',
+  ai_trade: '/ai_deal',
   ai_risk: '/ai_risk',
-  ai_market_summary: '/ai_market_summary',
+  ai_market: '/ai_market',
+  ai_market_summary: '/ai_market',
 
   risk: '/submenu_risk',
   risk_status: '/risk_status',
@@ -107,11 +109,10 @@ export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions
   if (['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume'].includes(command)) return withBackHome('market', [[{ text: '🔄 Обновить', callback_data: 'market_refresh' }]]);
 
   if (command === '/submenu_ai') return withHome([
-    [{ text: '🧠 AI-разбор портфеля', callback_data: 'ai_portfolio' }],
-    [{ text: '📈 AI-разбор сделки', callback_data: 'ai_trade' }, { text: '⚠️ AI-риск', callback_data: 'ai_risk' }],
-    [{ text: '📰 AI-сводка рынка', callback_data: 'ai_market_summary' }],
+    [{ text: '🧠 AI-разбор портфеля', callback_data: 'ai_portfolio' }, { text: '📈 AI-сводка рынка', callback_data: 'ai_market' }],
+    [{ text: '⚠️ AI-риск', callback_data: 'ai_risk' }, { text: '📈 AI-разбор сделки', callback_data: 'ai_deal' }],
   ]);
-  if (['/ai_analysis', '/ai_portfolio', '/ai_trade', '/ai_risk', '/ai_market_summary'].includes(command)) return getBackHomeKeyboard('ai');
+  if (['/ai_analysis', '/ai_portfolio', '/ai_deal', '/ai_trade', '/ai_risk', '/ai_market', '/ai_market_summary'].includes(command)) return withBackHome('ai', [[{ text: '🔄 Обновить', callback_data: command === '/ai_market' || command === '/ai_market_summary' ? 'ai_market' : command === '/ai_risk' ? 'ai_risk' : command === '/ai_deal' || command === '/ai_trade' ? 'ai_deal' : 'ai_portfolio' }]]);
 
   if (command === '/submenu_risk') return withHome([
     [{ text: '⚠️ Risk status', callback_data: 'risk_status' }, { text: '🤖 Paper mode', callback_data: 'paper_mode' }],

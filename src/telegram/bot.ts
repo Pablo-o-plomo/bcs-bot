@@ -18,6 +18,7 @@ import { scanMarket, getTopList } from '../market/scanner';
 import { formatMarketOverview, formatScanner, formatTopList } from '../market/formatter';
 import type { TopListMode } from '../market/types';
 import { reviewTrade } from '../ai/tradeReview';
+import { analyzeDeal, analyzeMarket, analyzePortfolio, analyzeRisk } from '../ai/analyzer';
 import {
   ensureUser,
   getBrokerFee,
@@ -44,7 +45,7 @@ let bot: TelegramBot;
 type DraftStep = 'instrumentType' | 'ticker' | 'direction' | 'entryPrice' | 'quantity' | 'stopLoss' | 'takeProfit' | 'comment' | 'confirm';
 interface DraftTrade { step: DraftStep; data: Partial<TradeInput>; promptMessageId?: number; summary?: string }
 const drafts = new Map<string, DraftTrade>();
-const textModes = new Map<string, 'instrument_analysis' | 'ai_review' | 'set_deposit' | 'set_risk' | 'set_daily_loss' | 'set_max_positions' | 'set_tariff'>();
+const textModes = new Map<string, 'instrument_analysis' | 'ai_review' | 'ai_deal' | 'set_deposit' | 'set_risk' | 'set_daily_loss' | 'set_max_positions' | 'set_tariff'>();
 const SUPPORTED_INSTRUMENTS = new Set(config.execution.allowedSymbols.map(symbol => symbol.toUpperCase()));
 
 export function initTelegramBot(): TelegramBot {
@@ -66,6 +67,10 @@ function registerCommands(): void {
   bot.onText(/^\/add_trade/, msg => handleCommand(chatId(msg), '/add_trade', fromId(msg)));
   bot.onText(/^\/analyze(?:\s+(.+))?/, (msg, match) => handleAnalyze(msg, match?.[1]));
   bot.onText(/^\/ai_review/, msg => handleCommand(chatId(msg), '/ai_review', fromId(msg)));
+  bot.onText(/^\/ai_portfolio/, msg => handleCommand(chatId(msg), '/ai_portfolio', fromId(msg)));
+  bot.onText(/^\/ai_market/, msg => handleCommand(chatId(msg), '/ai_market', fromId(msg)));
+  bot.onText(/^\/ai_risk/, msg => handleCommand(chatId(msg), '/ai_risk', fromId(msg)));
+  bot.onText(/^\/ai_deal/, msg => handleCommand(chatId(msg), '/ai_deal', fromId(msg)));
   bot.onText(/^\/market/, msg => handleCommand(chatId(msg), '/market', fromId(msg)));
   bot.onText(/^\/scanner/, msg => handleCommand(chatId(msg), '/scanner', fromId(msg)));
   bot.onText(/^\/top(?:\s+(gainers|losers|volume))?/, (msg, match) => handleCommand(chatId(msg), `/top_${normalizeTopMode(match?.[1])}`, fromId(msg)));
@@ -152,7 +157,11 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
     return send(chatIdValue, buildApiStatus());
   }
   if (command === '/limits') return send(chatIdValue, await buildLimits(telegramId));
-  if (command === '/ai_analysis') return send(chatIdValue, buildAiSectionInDevelopment());
+  if (command === '/ai_analysis') return send(chatIdValue, await buildAiMarketAnalysis());
+  if (command === '/ai_portfolio') return send(chatIdValue, await buildAiPortfolioAnalysis(telegramId));
+  if (command === '/ai_market' || command === '/ai_market_summary') return send(chatIdValue, await buildAiMarketAnalysis());
+  if (command === '/ai_risk') return send(chatIdValue, await buildAiRiskAnalysis(telegramId));
+  if (command === '/ai_deal' || command === '/ai_trade') return send(chatIdValue, buildAiDealPrompt(telegramId));
   if (command === '/market') return send(chatIdValue, await buildMarketOverview());
   if (command === '/scanner') return send(chatIdValue, await buildMarketScanner());
   if (command === '/top_gainers') return send(chatIdValue, await buildMarketTop('gainers'));
@@ -167,7 +176,7 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/debug_limits') return send(chatIdValue, await buildDebugLimits(telegramId));
   if (command === '/debug_portfolio') return handleDebugPortfolio(chatIdValue, telegramId);
   if (command === '/export' || command === '/watchlist') return send(chatIdValue, buildSectionInDevelopment());
-  if (command === '/ai_portfolio' || command === '/ai_trade' || command === '/ai_risk' || command === '/ai_market_summary') return send(chatIdValue, buildAiSectionInDevelopment());
+
   if (command === '/set_deposit' || command === '/set_risk' || command === '/set_daily_loss' || command === '/set_max_positions' || command === '/set_tariff') return send(chatIdValue, buildSettingsActionScreen(command, telegramId));
   if (command === '/paper' || command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
   if (command === '/execution' || command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
@@ -213,7 +222,11 @@ async function buildMenuScreenText(command: string, telegramId: string): Promise
   if (command === '/top_losers') return buildMarketTop('losers');
   if (command === '/top_volume') return buildMarketTop('volume');
   if (command === '/export' || command === '/watchlist') return buildSectionInDevelopment();
-  if (command === '/ai_analysis' || command === '/ai_portfolio' || command === '/ai_trade' || command === '/ai_risk' || command === '/ai_market_summary') return buildAiSectionInDevelopment();
+  if (command === '/ai_analysis') return buildAiMarketAnalysis();
+  if (command === '/ai_portfolio') return buildAiPortfolioAnalysis(telegramId);
+  if (command === '/ai_market' || command === '/ai_market_summary') return buildAiMarketAnalysis();
+  if (command === '/ai_risk') return buildAiRiskAnalysis(telegramId);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
   if (command === '/risk' || command === '/risk_settings') return buildRiskManagement(telegramId);
   if (command === '/risk_status') return buildRiskStatus(telegramId);
   if (command === '/paper' || command === '/paper_mode') return buildPaperModeStatus();
@@ -251,11 +264,11 @@ function logMenuCommandReuse(command: string): void {
 }
 
 function isPlaceholderCommand(command: string): boolean {
-  return ['/ai_analysis', '/ai_portfolio', '/ai_trade', '/ai_risk', '/ai_market_summary', '/export', '/watchlist'].includes(command);
+  return ['/export', '/watchlist'].includes(command);
 }
 
 function isExistingHandlerCommand(command: string): boolean {
-  return ['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume', '/portfolio', '/real_portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio', '/risk', '/risk_settings', '/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/help'].includes(command);
+  return ['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_analysis', '/ai_portfolio', '/ai_market', '/ai_market_summary', '/ai_risk', '/ai_deal', '/ai_trade', '/portfolio', '/real_portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio', '/risk', '/risk_settings', '/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/help'].includes(command);
 }
 
 async function editMenuMessage(chatIdValue: string, messageId: number, text: string, replyMarkup: TelegramBot.SendMessageOptions['reply_markup']): Promise<number> {
@@ -498,7 +511,7 @@ async function requestInstrument(chat: string, telegramId: string): Promise<void
 
 async function handleAnalyze(msg: TelegramBot.Message, ticker?: string): Promise<void> {
   ensureUser(fromId(msg));
-  if (!ticker) return requestInstrument(chatId(msg), fromId(msg));
+  if (!ticker) return send(chatId(msg), await buildAiMarketAnalysis());
   await processMoexAnalysis(chatId(msg), ticker);
 }
 
@@ -530,6 +543,7 @@ async function handleTextMode(msg: TelegramBot.Message, mode: string): Promise<v
   const text = msg.text?.trim() ?? '';
   if (mode === 'instrument_analysis') return processMoexAnalysis(chat, text);
   if (mode === 'ai_review') return processAiReview(chat, telegramId, text);
+  if (mode === 'ai_deal') return processAiDeal(chat, telegramId, text);
   const value = parseNumber(text);
   if (value === null) return send(chat, 'Введите число.');
   if (mode === 'set_deposit') updateUserSettings(telegramId, { depositRub: value });
@@ -571,6 +585,93 @@ function normalizeTopMode(value?: string): TopListMode {
   if (value === 'losers') return 'losers';
   if (value === 'volume') return 'volume';
   return 'gainers';
+}
+
+
+async function buildAiPortfolioAnalysis(telegramId: string): Promise<string> {
+  const settings = getUserSettings(telegramId);
+  if (config.bcsApi.enabled) {
+    try {
+      const portfolio = await bcsApiClient.getPortfolio();
+      return analyzePortfolio({
+        balance: portfolio.money.balance,
+        freeCash: portfolio.money.freeCash,
+        portfolioValue: portfolio.money.portfolioValue,
+        dayPnl: portfolio.money.dayPnl,
+        totalPnl: portfolio.money.totalPnl,
+        cash: portfolio.money.cash,
+        positions: portfolio.positions,
+        settings,
+        source: 'BCS API',
+      });
+    } catch (err: any) {
+      logger.warn(`ai_analysis_failed: portfolio_bcs: ${err?.message ?? err}`);
+    }
+  }
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  const localPositions = getBcsPositions();
+  return analyzePortfolio({
+    balance: snapshot?.balance ?? settings.depositRub,
+    freeCash: snapshot?.freeCash ?? 0,
+    portfolioValue: snapshot?.portfolioValue ?? 0,
+    dayPnl: snapshot?.dayPnl ?? 0,
+    totalPnl: snapshot?.totalPnl ?? 0,
+    cash: [{ currency: 'RUB', available: snapshot?.freeCash ?? 0, blocked: 0, total: snapshot?.freeCash ?? 0, currentValueRub: snapshot?.freeCash ?? 0 }],
+    positions: localPositions.map(position => ({
+      ticker: position.ticker,
+      name: position.name,
+      quantity: position.quantity,
+      averagePrice: position.averagePrice,
+      currentPrice: position.currentPrice,
+      currentValueRub: position.currentPrice * position.quantity,
+      unrealizedPnl: position.unrealizedPnl,
+      portfolioSharePercent: position.portfolioSharePercent,
+    })),
+    settings,
+    source: 'Локальный snapshot',
+  });
+}
+
+async function buildAiMarketAnalysis(): Promise<string> {
+  const { snapshot, signals } = await scanMarket();
+  const { instruments: gainers } = await getTopList('gainers');
+  const { instruments: losers } = await getTopList('losers');
+  const { instruments: volume } = await getTopList('volume');
+  return analyzeMarket({ snapshot, signals, gainers, losers, volume });
+}
+
+async function buildAiRiskAnalysis(telegramId: string): Promise<string> {
+  const settings = getUserSettings(telegramId);
+  const positions = getBcsPositions();
+  const exposureRub = positions.reduce((sum, position) => sum + Number(position.currentPrice ?? 0) * Number(position.quantity ?? 0), 0);
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  return analyzeRisk({
+    settings,
+    exposureRub,
+    cashRub: snapshot?.freeCash ?? 0,
+    positionsCount: positions.length,
+    paperMode: config.execution.mode === 'paper',
+    executionMode: config.execution.mode,
+    readOnly: config.readOnlyMode,
+    orderExecution: config.allowOrderExecution && !config.readOnlyMode,
+  });
+}
+
+function buildAiDealPrompt(telegramId: string): string {
+  textModes.set(telegramId, 'ai_deal');
+  return buildUiScreen('🧠 <b>AI-разбор сделки</b>', 'BCS Assistant Bot', `Отправьте тикер и направление, например: <code>GAZP long</code>
+
+Разбор оценит рыночный контекст, риск, примерный стоп, размер позиции и условия входа.`, new Date().toISOString(), false);
+}
+
+async function processAiDeal(chat: string, telegramId: string, text: string): Promise<void> {
+  const [tickerRaw, directionRaw] = text.trim().split(/\s+/);
+  const direction = directionRaw?.toLowerCase();
+  if (!tickerRaw || (direction !== 'long' && direction !== 'short')) return send(chat, 'Отправьте тикер и направление, например: <code>GAZP long</code>');
+  const snapshot = await getMarketSnapshot();
+  const ticker = tickerRaw.toUpperCase();
+  const instrument = snapshot.instruments.find(item => item.ticker.toUpperCase() === ticker);
+  await send(chat, await analyzeDeal({ ticker, direction, instrument, settings: getUserSettings(telegramId), marketStatus: snapshot.status }));
 }
 
 async function buildMenuPortfolioScreen(telegramId: string): Promise<string> {
