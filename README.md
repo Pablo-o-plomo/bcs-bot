@@ -129,6 +129,7 @@ Telegram-меню показывает `🤖 Paper mode`, `⚡ Execution mode`, 
 - `positionSync` отдельно обновляет реальные позиции для reconciliation.
 - `tradeSync` забирает сделки через `/trade-api-bff-trade-details/api/v1/trades/search` и пишет их с deduplication по external id.
 - Статус последнего sync и ping показывается в кнопке `🔌 Статус БКС API`; если `TELEGRAM_ADMIN_ID` задан, кнопка защищена admin guard.
+- Денежные остатки берутся из `/trade-api-bff-limit/api/v1/limits`, парсятся по валютам и показываются в `/portfolio` и `/limits`.
 - Ошибки API логируются без токенов и не останавливают Telegram-бота.
 
 ## Деплой на Railway
@@ -154,7 +155,8 @@ Telegram-меню показывает `🤖 Paper mode`, `⚡ Execution mode`, 
 | Команда | Назначение |
 | --- | --- |
 | `/start`, `/menu` | Открыть главное меню |
-| `/portfolio` | Портфель и открытые позиции |
+| `/portfolio` | Реальный портфель, позиции и блок «Деньги» из BCS limits |
+| `/limits` | Реальные денежные остатки по валютам: свободно / заблокировано / всего |
 | `/add_trade` | Добавить сделку через пошаговый сценарий |
 | `/analyze SBER` | Получить MOEX-анализ инструмента |
 | `/ai_review` | Запустить AI/rule-based разбор сделки |

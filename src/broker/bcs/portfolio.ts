@@ -1,101 +1,39 @@
+import { config } from '../../config';
 import type { BcsApiClient } from './client';
-import type { BcsPortfolio, BcsPosition } from './types';
+import type { BcsPortfolio } from './types';
+import { normalizePositions } from './positions';
+import { getLimits } from './limits';
 
 export async function getPortfolio(client: BcsApiClient): Promise<BcsPortfolio> {
-  const raw = await client.request<any>('GET', '/trade-api-bff-limit/api/v1/limits');
-  // TEMP DEBUG: remove after mapping exact BCS limits fields.
-  console.log('[BCS_LIMITS_RAW]', JSON.stringify(raw, null, 2));
-  return normalizeLimits(raw);
-}
-
-function normalizeLimits(raw: any): BcsPortfolio {
-  const moneyLimits = arr(raw?.moneyLimits);
-  const depoLimit = arr(raw?.depoLimit);
-  const futureHolding = arr(raw?.futureHolding);
-  const futuresLimits = arr(raw?.futuresLimits);
-
-  const rubMoney = moneyLimits.filter(row => String(row?.currency ?? row?.currencyCode ?? row?.currCode ?? '').toUpperCase() === 'RUB');
-  const moneyRows = rubMoney.length ? rubMoney : moneyLimits;
-
-  const freeCash = sum(moneyRows, row => firstNum(row, ['availableBalance', 'availableCash', 'freeCash', 'freeMoney', 'currentBalance', 'balance', 'amount', 'value', 'limit']));
-  const reservedCash = sum(moneyRows, row => firstNum(row, ['blocked', 'blockedMoney', 'reserved', 'locked', 'margin']));
-
-  const positions = [...normalizeDepo(depoLimit), ...normalizeFutures(futureHolding)];
-  const positionValue = positions.reduce((total, position) => total + position.currentPrice * position.quantity, 0);
-  const futuresValue = sum(futuresLimits, row => firstNum(row, ['value', 'amount', 'total', 'limit', 'currentBalance', 'balance']));
-  const portfolioValue = positionValue || futuresValue || reservedCash;
-  const balance = freeCash + portfolioValue;
-  const totalPnl = positions.reduce((total, position) => total + position.unrealizedPnl, 0);
-
+  const raw = await client.request<any>('GET', '/trade-api-bff-portfolio/api/v1/portfolio', undefined, config.bcsApi.accountId ? { accountId: config.bcsApi.accountId } : undefined);
+  const positions = normalizePositions(raw?.positions ?? raw?.securities ?? raw?.assets ?? []);
+  const money = raw?.money ?? raw?.summary ?? raw ?? {};
+  let limits = { cash: [] as import('./types').BcsCashBalance[] };
+  try {
+    limits = await getLimits(client);
+  } catch {
+    limits = { cash: [] };
+  }
+  const primaryCash = limits.cash.find(item => item.currency === 'RUB') ?? limits.cash[0];
+  const totalCash = limits.cash.reduce((sum, item) => sum + item.total, 0);
+  const currentPortfolioValue = num(money.portfolioValue ?? money.totalAssets ?? money.total ?? money.balance);
   return {
     source: 'BCS API',
     money: {
-      balance: round(balance),
-      freeCash: round(freeCash),
-      portfolioValue: round(portfolioValue),
-      dayPnl: 0,
-      totalPnl: round(totalPnl),
-      currency: 'RUB',
+      balance: primaryCash?.total ?? num(money.balance ?? money.totalAssets ?? money.total ?? money.portfolioValue),
+      freeCash: primaryCash?.available ?? num(money.freeCash ?? money.availableCash ?? money.cash ?? money.freeMoney),
+      portfolioValue: currentPortfolioValue || totalCash,
+      dayPnl: num(money.dayPnl ?? money.dailyPnl ?? money.pnlDay),
+      totalPnl: num(money.totalPnl ?? money.pnl ?? money.profit),
+      currency: primaryCash?.currency ?? money.currency ?? 'RUB',
+      cash: limits.cash,
     },
-    positions: withShares(positions, portfolioValue),
+    positions,
     updatedAt: new Date().toISOString(),
   };
 }
 
-function normalizeDepo(rows: any[]): BcsPosition[] {
-  return rows.map(row => {
-    const quantity = firstNum(row, ['currentBalance', 'balance', 'qty', 'quantity', 'amount', 'openBalance']);
-    const value = firstNum(row, ['marketValue', 'currentValue', 'value']);
-    const price = firstNum(row, ['currentPrice', 'lastPrice', 'marketPrice', 'price', 'closePrice']) || (quantity ? value / quantity : 0);
-    return {
-      ticker: String(firstStr(row, ['ticker', 'symbol', 'secCode', 'securityCode', 'instrumentId', 'isin']) || 'UNKNOWN'),
-      name: firstStr(row, ['name', 'securityName', 'shortName', 'instrumentName']),
-      quantity,
-      averagePrice: firstNum(row, ['averagePrice', 'avgPrice', 'priceAvg', 'bookPrice']) || price,
-      currentPrice: price,
-      unrealizedPnl: firstNum(row, ['unrealizedPnl', 'pnl', 'profit', 'varMargin']),
-      portfolioSharePercent: 0,
-      instrumentType: firstStr(row, ['instrumentType', 'type']) || 'security',
-      classCode: firstStr(row, ['classCode', 'board', 'market']),
-    };
-  }).filter(row => row.ticker !== 'UNKNOWN' || row.quantity !== 0);
+function num(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
-
-function normalizeFutures(rows: any[]): BcsPosition[] {
-  return rows.map(row => {
-    const quantity = firstNum(row, ['totalNet', 'currentNet', 'balance', 'qty', 'quantity', 'amount']);
-    const price = firstNum(row, ['currentPrice', 'lastPrice', 'marketPrice', 'price', 'settlementPrice']);
-    return {
-      ticker: String(firstStr(row, ['ticker', 'symbol', 'secCode', 'securityCode', 'shortName']) || 'UNKNOWN'),
-      name: firstStr(row, ['name', 'securityName', 'shortName', 'instrumentName']),
-      quantity,
-      averagePrice: firstNum(row, ['averagePrice', 'avgPrice', 'priceAvg', 'settlementPrice']) || price,
-      currentPrice: price,
-      unrealizedPnl: firstNum(row, ['varMargin', 'unrealizedPnl', 'pnl', 'profit']),
-      portfolioSharePercent: 0,
-      instrumentType: 'future',
-      classCode: firstStr(row, ['classCode', 'board', 'market']) || 'SPBFUT',
-    };
-  }).filter(row => row.ticker !== 'UNKNOWN' || row.quantity !== 0);
-}
-
-function withShares(positions: BcsPosition[], total: number): BcsPosition[] {
-  if (total <= 0) return positions;
-  return positions.map(position => ({ ...position, portfolioSharePercent: round((position.currentPrice * position.quantity / total) * 100) }));
-}
-
-function arr(value: unknown): any[] { return Array.isArray(value) ? value : []; }
-function sum(rows: any[], fn: (row: any) => number): number { return rows.reduce((total, row) => total + fn(row), 0); }
-function firstStr(row: any, keys: string[]): string | undefined {
-  for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null && String(row[key]).trim()) return String(row[key]);
-  return undefined;
-}
-function firstNum(row: any, keys: string[]): number {
-  for (const key of keys) {
-    const value = row?.[key];
-    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(/\s/g, '').replace(',', '.')) : NaN;
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-function round(value: number): number { return Math.round(value * 100) / 100; }

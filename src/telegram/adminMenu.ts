@@ -11,6 +11,7 @@ export const callbacks: Record<string, string> = {
   diary: '/diary',
   local_diary: '/diary',
   api_status: '/api_status',
+  limits: '/limits',
   paper_mode: '/paper_mode',
   execution_mode: '/execution_mode',
   risk_status: '/risk_status',
@@ -38,6 +39,7 @@ export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'
       [{ text: '⚠️ Риск-менеджмент', callback_data: 'risk' }, { text: '💰 Комиссии БКС', callback_data: 'commissions' }],
       [{ text: '📋 Дневник сделок', callback_data: 'diary' }, { text: '📅 Отчет за день', callback_data: 'daily_report' }],
       [{ text: '📆 Отчет за месяц', callback_data: 'monthly_report' }, { text: '🔌 Статус БКС API', callback_data: 'api_status' }],
+      [{ text: '💵 Остатки', callback_data: 'limits' }],
       [{ text: '⚙️ Настройки', callback_data: 'settings' }],
     ],
   };

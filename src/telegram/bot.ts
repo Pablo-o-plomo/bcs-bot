@@ -53,6 +53,7 @@ export function initTelegramBot(): TelegramBot {
 function registerCommands(): void {
   bot.onText(/^\/start|^\/menu/, handleStart);
   bot.onText(/^\/portfolio/, msg => handleCommand(chatId(msg), '/portfolio', fromId(msg)));
+  bot.onText(/^\/limits/, msg => handleCommand(chatId(msg), '/limits', fromId(msg)));
   bot.onText(/^\/add_trade/, msg => handleCommand(chatId(msg), '/add_trade', fromId(msg)));
   bot.onText(/^\/analyze(?:\s+(.+))?/, (msg, match) => handleAnalyze(msg, match?.[1]));
   bot.onText(/^\/ai_review/, msg => handleCommand(chatId(msg), '/ai_review', fromId(msg)));
@@ -108,6 +109,7 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
     if (!isAdminAllowed(telegramId)) return send(chatIdValue, '⛔️ Раздел доступен только администратору.');
     return send(chatIdValue, buildApiStatus());
   }
+  if (command === '/limits') return send(chatIdValue, await buildLimits(telegramId));
   if (command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
   if (command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
   if (command === '/risk_status') return send(chatIdValue, buildRiskStatus(telegramId));
@@ -375,8 +377,9 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
   if (config.bcsApi.enabled) {
     try {
       const portfolio = await bcsApiClient.getPortfolio();
+      const moneyLines = formatCashBalances(portfolio.money.cash);
       const lines = portfolio.positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
-      return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API</b>\n\nБаланс: <b>${formatRub(portfolio.money.balance)}</b>\nСвободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+      return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API</b>\n\nБаланс: <b>${formatRub(portfolio.money.balance)}</b>\nСвободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>\n\n💵 <b>Деньги</b>\n${moneyLines}\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
     } catch (err: any) {
       logger.warn(`Real portfolio fallback: ${err.message}`);
     }
@@ -389,6 +392,28 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
     return `${fallbackNotice}📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API (последний sync)</b>\n\nБаланс: <b>${formatRub(snapshot.balance)}</b>\nСвободные средства: <b>${formatRub(snapshot.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(snapshot.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
   }
   return `${fallbackNotice}${buildApiStatus()}\n\n${buildPortfolio(telegramId)}`;
+}
+
+
+async function buildLimits(telegramId: string): Promise<string> {
+  if (!config.bcsApi.enabled) return '💵 <b>Остатки</b>\n\nBCS API отключен.';
+  try {
+    const limits = await bcsApiClient.getLimits();
+    const rawDebug = !limits.cash.length && isAdminAllowed(telegramId) ? `\n\nRaw debug limits:\n<pre>${escapeHtml(limits.rawDebug)}</pre>` : '';
+    return `💵 <b>Остатки по счету</b>\nИсточник: <b>БКС API limits</b>\nОбновлено: <b>${limits.updatedAt}</b>\n\n${formatCashBalances(limits.cash)}${rawDebug}`;
+  } catch (err: any) {
+    logger.warn(`BCS limits view failed: ${err.message}`);
+    return `💵 <b>Остатки</b>\n\n⚠️ BCS API временно недоступен.\n${err.message}`;
+  }
+}
+
+function formatCashBalances(cash: Array<{ currency: string; available: number; blocked: number; total: number }>): string {
+  if (!cash.length) return 'нет данных';
+  return cash.map(item => `• ${item.currency}: свободно <b>${formatNumber(item.available)}</b>, заблокировано <b>${formatNumber(item.blocked)}</b>, всего <b>${formatNumber(item.total)}</b>`).join('\n');
+}
+
+function formatNumber(value: number): string {
+  return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function buildPaperModeStatus(): string {

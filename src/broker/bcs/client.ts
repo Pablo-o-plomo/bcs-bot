@@ -8,7 +8,8 @@ import { getPositions } from './positions';
 import { getTrades } from './history';
 import { getInstruments } from './instruments';
 import { getMarketData } from './market';
-import type { BcsApiStatus, BcsInstrument, BcsMarketData, BcsMoneySummary, BcsPortfolio, BcsReadOnlyOrderPayload, BcsTrade } from './types';
+import { getLimits } from './limits';
+import type { BcsApiStatus, BcsInstrument, BcsLimits, BcsMarketData, BcsMoneySummary, BcsPortfolio, BcsReadOnlyOrderPayload, BcsTrade } from './types';
 
 type RequestMethod = 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH';
 
@@ -89,6 +90,7 @@ export class BcsApiClient {
   getPortfolio(): Promise<BcsPortfolio> { return getPortfolio(this); }
   getPositions() { return getPositions(this); }
   async getBalance(): Promise<BcsMoneySummary> { return (await this.getPortfolio()).money; }
+  getLimits(): Promise<BcsLimits> { return getLimits(this); }
   getTrades(): Promise<BcsTrade[]> { return getTrades(this); }
   getInstruments(query?: string): Promise<BcsInstrument[]> { return getInstruments(this, query); }
   getMarketData(ticker: string): Promise<BcsMarketData> { return getMarketData(this, ticker); }

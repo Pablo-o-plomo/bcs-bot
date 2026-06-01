@@ -19,6 +19,20 @@ export interface BcsMoneySummary {
   dayPnl: number;
   totalPnl: number;
   currency: string;
+  cash: BcsCashBalance[];
+}
+
+export interface BcsCashBalance {
+  currency: string;
+  available: number;
+  blocked: number;
+  total: number;
+}
+
+export interface BcsLimits {
+  cash: BcsCashBalance[];
+  rawDebug: string;
+  updatedAt: string;
 }
 
 export interface BcsPosition {

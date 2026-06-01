@@ -37,7 +37,7 @@ export class BcsReadOnlyError extends Error {
 
 export function sanitizeSecret(value: unknown): string {
   let message = String(value ?? 'unknown error');
-  const secrets = [config.bcsApi.token, process.env.BCS_API_TOKEN].filter(Boolean) as string[];
+  const secrets = [config.bcsApi.token, process.env.BCS_API_TOKEN, config.bcsApi.accountId, process.env.BCS_ACCOUNT_ID].filter(Boolean) as string[];
   for (const secret of secrets) message = message.split(secret).join('[redacted]');
   return message;
 }
