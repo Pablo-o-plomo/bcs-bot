@@ -736,6 +736,23 @@ function buildSettingsScreen(telegramId: string): string {
   return buildUiScreen('⚙️ <b>Настройки</b>', 'Локальные настройки', body, new Date().toISOString(), false);
 }
 
+
+function buildSettingsScreen(telegramId: string): string {
+  const s = getUserSettings(telegramId);
+  const fee = getBrokerFee(s.userId);
+  return `⚙️ <b>Настройки</b>
+━━━━━━━━━━━━━━
+
+Депозит: <b>${s.depositRub.toFixed(2)} ₽</b>
+Риск на сделку: <b>${s.riskPerTrade.toFixed(2)}%</b>
+Макс. дневная просадка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
+Макс. открытых позиций: <b>${s.maxOpenPositions}</b>
+
+Тариф комиссии: <b>${fee.tariffName}</b>
+Акции: <b>${fee.stockFeePercent}%</b>
+Инструменты: <code>${getInstruments().map(i => i.ticker).join(', ')}</code>`;
+}
+
 async function sendSettings(chat: string, telegramId: string): Promise<void> {
   const s = getUserSettings(telegramId);
   const fee = getBrokerFee(s.userId);
