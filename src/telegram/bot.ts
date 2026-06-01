@@ -65,9 +65,15 @@ function registerCommands(): void {
   bot.onText(/^\/market/, msg => handleCommand(chatId(msg), '/market', fromId(msg)));
   bot.onText(/^\/scanner/, msg => handleCommand(chatId(msg), '/scanner', fromId(msg)));
   bot.onText(/^Разбери сделку(?:\s+(.+))?/i, (msg, match) => handleAiReviewText(msg, match?.[1]));
+  bot.onText(/^\/risk_status/, msg => handleCommand(chatId(msg), '/risk_status', fromId(msg)));
   bot.onText(/^\/risk/, msg => handleCommand(chatId(msg), '/risk', fromId(msg)));
+  bot.onText(/^\/paper/, msg => handleCommand(chatId(msg), '/paper', fromId(msg)));
+  bot.onText(/^\/execution/, msg => handleCommand(chatId(msg), '/execution', fromId(msg)));
+  bot.onText(/^\/emergency_stop/, msg => handleCommand(chatId(msg), '/emergency_stop', fromId(msg)));
+  bot.onText(/^\/api_status/, msg => handleCommand(chatId(msg), '/api_status', fromId(msg)));
   bot.onText(/^\/commissions/, msg => handleCommand(chatId(msg), '/commissions', fromId(msg)));
   bot.onText(/^\/diary/, msg => handleCommand(chatId(msg), '/diary', fromId(msg)));
+  bot.onText(/^\/journal/, msg => handleCommand(chatId(msg), '/journal', fromId(msg)));
   bot.onText(/^\/daily_report/, msg => handleCommand(chatId(msg), '/daily_report', fromId(msg)));
   bot.onText(/^\/monthly_report/, msg => handleCommand(chatId(msg), '/monthly_report', fromId(msg)));
   bot.onText(/^\/settings/, msg => handleCommand(chatId(msg), '/settings', fromId(msg)));
@@ -133,7 +139,7 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/ai_review') return requestAiReview(chatIdValue, telegramId);
   if (command === '/risk') return send(chatIdValue, buildRiskManagement(telegramId));
   if (command === '/commissions') return send(chatIdValue, buildCommissions(telegramId));
-  if (command === '/diary') return send(chatIdValue, buildDiary(telegramId));
+  if (command === '/diary' || command === '/journal') return send(chatIdValue, buildDiary(telegramId));
   if (command === '/daily_report') return send(chatIdValue, buildReport(telegramId, 'day'));
   if (command === '/monthly_report') return send(chatIdValue, buildReport(telegramId, 'month'));
   if (command === '/api_status') {
@@ -153,8 +159,8 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/market' || command === '/scanner' || command === '/top_gainers' || command === '/top_losers' || command === '/top_volume' || command === '/export' || command === '/watchlist') return send(chatIdValue, buildSectionInDevelopment());
   if (command === '/ai_portfolio' || command === '/ai_trade' || command === '/ai_risk' || command === '/ai_market_summary') return send(chatIdValue, buildAiSectionInDevelopment());
   if (command === '/set_deposit' || command === '/set_risk' || command === '/set_daily_loss' || command === '/set_max_positions' || command === '/set_tariff') return send(chatIdValue, buildSettingsActionScreen(command, telegramId));
-  if (command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
-  if (command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
+  if (command === '/paper' || command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
+  if (command === '/execution' || command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
   if (command === '/risk_status') return send(chatIdValue, buildRiskStatus(telegramId));
   if (command === '/emergency_stop') return send(chatIdValue, buildEmergencyStopStatus());
   if (command === '/settings') return sendSettings(chatIdValue, telegramId);
@@ -170,14 +176,15 @@ async function renderMenuScreen(chatIdValue: string, messageId: number, command:
     return;
   }
 
-  let targetMessageId = await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю...</b>', getNavigationKeyboard());
+  const targetMessageId = await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю...</b>', getNavigationKeyboard());
   const text = await buildMenuScreenText(command, telegramId);
-  targetMessageId = await editMenuMessage(chatIdValue, targetMessageId, text, getMenuKeyboard(command));
+  await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
   logger.info(`screen_rendered: ${command}`);
   if (command.startsWith('/submenu_')) logger.info(`submenu_rendered: ${command}`);
 }
 
 async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
+  logMenuCommandReuse(command);
   if (command === '/submenu_portfolio') return buildSubmenuScreen('📊 <b>Портфель</b>', 'Выберите данные по счету BCS или debug-раздел.');
   if (command === '/submenu_debug') return buildSubmenuScreen('🧪 <b>Debug</b>', 'Диагностика raw-ответов BCS API. Раздел скрыт из главного меню.');
   if (command === '/submenu_market') return buildSubmenuScreen('📈 <b>Рынок</b>', 'MOEX-обзор, сканер и лидерборды рынка.');
@@ -194,16 +201,46 @@ async function buildMenuScreenText(command: string, telegramId: string): Promise
   if (command === '/ai_analysis' || command === '/ai_portfolio' || command === '/ai_trade' || command === '/ai_risk' || command === '/ai_market_summary') return buildAiSectionInDevelopment();
   if (command === '/risk' || command === '/risk_settings') return buildRiskManagement(telegramId);
   if (command === '/risk_status') return buildRiskStatus(telegramId);
-  if (command === '/paper_mode') return buildPaperModeStatus();
-  if (command === '/execution_mode') return buildExecutionStatus();
+  if (command === '/paper' || command === '/paper_mode') return buildPaperModeStatus();
+  if (command === '/execution' || command === '/execution_mode') return buildExecutionStatus();
   if (command === '/emergency_stop') return buildEmergencyStopStatus();
-  if (command === '/diary' || command === '/diary_menu') return buildDiary(telegramId);
+  if (command === '/journal' || command === '/diary' || command === '/diary_menu') return buildDiary(telegramId);
   if (command === '/daily_report' || command === '/daily_report_menu') return buildReport(telegramId, 'day');
   if (command === '/monthly_report') return buildReport(telegramId, 'month');
   if (command === '/commissions') return buildCommissions(telegramId);
   if (command === '/set_deposit' || command === '/set_risk' || command === '/set_daily_loss' || command === '/set_max_positions' || command === '/set_tariff') return buildSettingsActionScreen(command, telegramId);
   if (command === '/help') return buildHelp();
   return buildWelcomeScreen();
+}
+
+
+interface RenderContext { chatIdValue: string; telegramId: string; menuMessageId?: number }
+
+async function renderOrSend(ctx: RenderContext, text: string, replyMarkup?: TelegramBot.SendMessageOptions['reply_markup']): Promise<number | undefined> {
+  if (ctx.menuMessageId) {
+    return editMenuMessage(ctx.chatIdValue, ctx.menuMessageId, text, replyMarkup ?? getNavigationKeyboard());
+  }
+  const sent = await bot.sendMessage(ctx.chatIdValue, text, { parse_mode: 'HTML', reply_markup: replyMarkup, disable_web_page_preview: true });
+  return sent.message_id;
+}
+
+function logMenuCommandReuse(command: string): void {
+  if (isPlaceholderCommand(command)) {
+    logger.info(`callback_placeholder_used: ${command}`);
+    return;
+  }
+  if (isExistingHandlerCommand(command)) {
+    logger.info(`callback_mapped_to_existing_handler: ${command}`);
+    logger.info(`existing_handler_reused: ${command}`);
+  }
+}
+
+function isPlaceholderCommand(command: string): boolean {
+  return ['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_analysis', '/ai_portfolio', '/ai_trade', '/ai_risk', '/ai_market_summary', '/export', '/watchlist'].includes(command);
+}
+
+function isExistingHandlerCommand(command: string): boolean {
+  return ['/portfolio', '/real_portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio', '/risk', '/risk_settings', '/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/help'].includes(command);
 }
 
 async function editMenuMessage(chatIdValue: string, messageId: number, text: string, replyMarkup: TelegramBot.SendMessageOptions['reply_markup']): Promise<number> {

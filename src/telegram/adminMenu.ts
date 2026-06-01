@@ -32,13 +32,13 @@ export const callbacks: Record<string, string> = {
 
   risk: '/submenu_risk',
   risk_status: '/risk_status',
-  paper_mode: '/paper_mode',
-  execution_mode: '/execution_mode',
+  paper_mode: '/paper',
+  execution_mode: '/execution',
   emergency_stop: '/emergency_stop',
   risk_settings: '/risk',
 
-  diary_menu: '/diary',
-  diary: '/diary',
+  diary_menu: '/journal',
+  diary: '/journal',
   daily_report_menu: '/daily_report',
   daily_report: '/daily_report',
   monthly_report: '/monthly_report',
@@ -112,14 +112,14 @@ export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions
     [{ text: '⚡ Execution mode', callback_data: 'execution_mode' }, { text: '🛡 Risk settings', callback_data: 'risk_settings' }],
     [{ text: '🚨 Emergency stop', callback_data: 'emergency_stop' }],
   ]);
-  if (['/risk_status', '/paper_mode', '/execution_mode', '/emergency_stop', '/risk'].includes(command)) return getBackHomeKeyboard('risk');
+  if (['/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/risk'].includes(command)) return getBackHomeKeyboard('risk');
 
   if (command === '/submenu_reports') return withHome([
     [{ text: '📋 Дневник сделок', callback_data: 'diary' }, { text: '📅 Отчет за день', callback_data: 'daily_report' }],
     [{ text: '🗓 Отчет за месяц', callback_data: 'monthly_report' }, { text: '💸 Комиссии БКС', callback_data: 'commissions' }],
     [{ text: '📤 Экспорт', callback_data: 'export' }],
   ]);
-  if (['/diary', '/daily_report', '/monthly_report', '/commissions', '/export'].includes(command)) return getBackHomeKeyboard('reports');
+  if (['/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/export'].includes(command)) return getBackHomeKeyboard('reports');
 
   if (command === '/submenu_settings') return withHome([
     [{ text: '💵 Депозит', callback_data: 'set_deposit' }, { text: '📉 Риск %', callback_data: 'set_risk' }],
