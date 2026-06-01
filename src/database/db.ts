@@ -51,27 +51,6 @@ function createTables(): void {
       market TEXT NOT NULL DEFAULT 'MOEX'
     );
 
-    CREATE TABLE IF NOT EXISTS settings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      telegram_id TEXT NOT NULL UNIQUE,
-      deposit_rub REAL NOT NULL DEFAULT ${config.trading.defaultDepositRub},
-      risk_per_trade_percent REAL NOT NULL DEFAULT ${config.trading.riskPerTrade},
-      broker TEXT NOT NULL DEFAULT 'BCS',
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS instruments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ticker TEXT NOT NULL UNIQUE,
-      name TEXT,
-      type TEXT NOT NULL,
-      lot_size REAL NOT NULL DEFAULT 1,
-      price_step REAL,
-      currency TEXT NOT NULL DEFAULT 'RUB'
-    );
-
     CREATE TABLE IF NOT EXISTS trades (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId INTEGER NOT NULL,
@@ -144,6 +123,17 @@ function createTables(): void {
       frequentErrors TEXT NOT NULL,
       recommendations TEXT NOT NULL,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS bot_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      isPaused INTEGER NOT NULL DEFAULT 0,
+      consecutiveLosses INTEGER NOT NULL DEFAULT 0,
+      dailyLossPercent REAL NOT NULL DEFAULT 0,
+      lastDailyReset TEXT NOT NULL DEFAULT CURRENT_DATE,
+      totalBalance REAL NOT NULL DEFAULT ${config.trading.defaultDepositRub},
+      mode TEXT NOT NULL DEFAULT 'analytics',
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     INSERT OR IGNORE INTO bot_state (id) VALUES (1);
