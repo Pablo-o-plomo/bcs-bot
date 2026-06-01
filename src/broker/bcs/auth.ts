@@ -28,8 +28,10 @@ export async function getBcsAccessToken(forceRefresh = false): Promise<string> {
     grant_type: 'refresh_token',
   });
 
+  const authUrl = config.bcsApi.authUrl || `${config.bcsApi.baseUrl}/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token`;
+
   try {
-    const response = await axios.post(getBcsAuthUrl(), body.toString(), {
+    const response = await axios.post(authUrl, body.toString(), {
       timeout: config.bcsApi.timeoutMs,
       headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     });
@@ -41,15 +43,11 @@ export async function getBcsAccessToken(forceRefresh = false): Promise<string> {
   } catch (err: any) {
     const classified = classifyBcsError(err);
     const message = classified.statusCode === 404
-      ? 'BCS auth endpoint not found. Check BCS_AUTH_URL or BCS_API_BASE_URL.'
+      ? 'BCS auth endpoint not found. Check BCS_AUTH_URL and BCS_API_BASE_URL.'
       : classified.message;
     logger.error(`BCS API auth error: ${message}`);
     throw new BcsAuthError(message);
   }
-}
-
-function getBcsAuthUrl(): string {
-  return config.bcsApi.authUrl || `${config.bcsApi.baseUrl}/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token`;
 }
 
 export function resetBcsAccessToken(): void {
