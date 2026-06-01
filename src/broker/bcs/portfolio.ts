@@ -16,13 +16,17 @@ export async function getPortfolio(client: BcsApiClient): Promise<BcsPortfolio> 
   }
   const primaryCash = limits.cash.find(item => item.currency === 'RUB') ?? limits.cash[0];
   const totalCash = limits.cash.reduce((sum, item) => sum + item.total, 0);
-  const currentPortfolioValue = num(money.portfolioValue ?? money.totalAssets ?? money.total ?? money.balance);
+  const rubAvailable = limits.cash.find(item => item.currency === 'RUB')?.available;
+  const positionsValue = positions.reduce((sum, position) => sum + (position.currentPrice * position.quantity), 0);
+  const fallbackPortfolioValue = num(money.portfolioValue ?? money.totalAssets ?? money.total ?? money.balance);
+  const calculatedPortfolioValue = totalCash + positionsValue;
+  const portfolioValue = calculatedPortfolioValue || fallbackPortfolioValue;
   return {
     source: 'BCS API',
     money: {
-      balance: primaryCash?.total ?? num(money.balance ?? money.totalAssets ?? money.total ?? money.portfolioValue),
-      freeCash: primaryCash?.available ?? num(money.freeCash ?? money.availableCash ?? money.cash ?? money.freeMoney),
-      portfolioValue: currentPortfolioValue || totalCash,
+      balance: portfolioValue,
+      freeCash: rubAvailable ?? primaryCash?.available ?? num(money.freeCash ?? money.availableCash ?? money.cash ?? money.freeMoney),
+      portfolioValue,
       dayPnl: num(money.dayPnl ?? money.dailyPnl ?? money.pnlDay),
       totalPnl: num(money.totalPnl ?? money.pnl ?? money.profit),
       currency: primaryCash?.currency ?? money.currency ?? 'RUB',

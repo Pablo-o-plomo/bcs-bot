@@ -29,7 +29,9 @@ export async function getLimits(client: BcsApiClient): Promise<BcsLimits> {
 export function parseCashBalances(raw: unknown): BcsCashBalance[] {
   const rows = collectCandidateRows(raw);
   const byCurrency = new Map<string, BcsCashBalance>();
+  parseMoneyLimits(raw, byCurrency);
   for (const row of rows) {
+    if (isBcsMoneyLimitRow(row.values)) continue;
     const currency = normalizeCurrency(row.currency);
     if (!currency) continue;
     const available = firstNumber(row.values, AVAILABLE_KEYS);
@@ -59,6 +61,58 @@ export function buildRawDebug(raw: unknown): string {
 interface CashCandidateRow {
   currency: unknown;
   values: Record<string, unknown>;
+}
+
+interface MoneyLimitDebugRow {
+  currency: string;
+  exchange: string;
+  quantityValue: number;
+  locked: number;
+}
+
+function parseMoneyLimits(raw: unknown, byCurrency: Map<string, BcsCashBalance>): void {
+  const moneyLimits = findMoneyLimits(raw);
+  const debugRows: MoneyLimitDebugRow[] = [];
+  for (const row of moneyLimits) {
+    const currency = normalizeCurrency(row.currencyCode ?? row.currency ?? row.curr ?? row.code);
+    if (!currency) continue;
+    const quantityValue = numberOrNull((row.quantity as Record<string, unknown> | undefined)?.value) ?? numberOrNull(row.quantity) ?? 0;
+    const locked = numberOrNull(row.locked) ?? numberOrNull(row.blocked) ?? 0;
+    const current = byCurrency.get(currency) ?? { currency, available: 0, blocked: 0, total: 0 };
+    current.available += quantityValue;
+    current.blocked += locked;
+    current.total += quantityValue + locked;
+    byCurrency.set(currency, current);
+    debugRows.push({ currency, exchange: String(row.exchange ?? 'unknown'), quantityValue: round(quantityValue), locked: round(locked) });
+  }
+  logger.info(`BCS moneyLimits parsed: ${debugRows.length ? debugRows.map(row => `currency=${row.currency}, exchange=${row.exchange}, quantityValue=${row.quantityValue}, locked=${row.locked}`).join(' | ') : 'none'}`);
+}
+
+function findMoneyLimits(raw: unknown): Array<Record<string, unknown>> {
+  const rows: Array<Record<string, unknown>> = [];
+  const seen = new WeakSet<object>();
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 8 || !value || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1);
+      return;
+    }
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (key === 'moneyLimits' && Array.isArray(nested)) {
+        rows.push(...nested.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item)));
+      } else {
+        visit(nested, depth + 1);
+      }
+    }
+  };
+  visit(raw, 0);
+  return rows;
+}
+
+function isBcsMoneyLimitRow(row: Record<string, unknown>): boolean {
+  return row.instrumentType === 'MONEY' && (row.quantity !== undefined || row.currencyCode !== undefined);
 }
 
 function collectCandidateRows(raw: unknown): CashCandidateRow[] {

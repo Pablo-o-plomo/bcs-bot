@@ -379,7 +379,7 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
   if (config.bcsApi.enabled) {
     try {
       const portfolio = await bcsApiClient.getPortfolio();
-      const moneyLines = formatCashBalances(portfolio.money.cash, true);
+      const moneyLines = formatCashBalances(portfolio.money.cash);
       const lines = portfolio.positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
       return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API</b>\n\nБаланс: <b>${formatRub(portfolio.money.balance)}</b>\nСвободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>\n\n💰 <b>Деньги:</b>\n${moneyLines}\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
     } catch (err: any) {
@@ -405,7 +405,7 @@ async function buildLimits(telegramId: string): Promise<string> {
       const rawDebug = isAdminAllowed(telegramId) ? `\n\nRaw debug limits:\n<pre>${escapeHtml(limits.rawDebug).slice(0, 3500)}</pre>` : '';
       return `💵 <b>Остатки по счету</b>\nИсточник: <b>БКС API limits</b>\nОбновлено: <b>${limits.updatedAt}</b>\n\nBCS API вернул limits, но денежные остатки не найдены. Выполните /debug_limits.${rawDebug}`;
     }
-    return `💵 <b>Остатки по счету</b>\nИсточник: <b>БКС API limits</b>\nОбновлено: <b>${limits.updatedAt}</b>\n\n${formatCashBalances(limits.cash, true)}`;
+    return `💵 <b>Остатки по счету</b>\nИсточник: <b>БКС API limits</b>\nОбновлено: <b>${limits.updatedAt}</b>\n\n${formatCashBalances(limits.cash)}`;
   } catch (err: any) {
     logger.warn(`BCS limits view failed: ${err.message}`);
     return `💵 <b>Остатки</b>\n\n⚠️ BCS API временно недоступен.\n${err.message}`;
