@@ -38,12 +38,13 @@ async function analyze(kind: string, prompt: string, fallback: () => string): Pr
       temperature: 0.2,
     }, {
       headers: { Authorization: `Bearer ${config.openai.apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 15000,
+      timeout: 7000,
     });
     const text = ensureDisclaimer(response.data?.choices?.[0]?.message?.content || fallback());
     logger.info(`ai_analysis_finished: ${kind}`);
     return text;
   } catch (err: any) {
+    if (err?.code === 'ECONNABORTED' || String(err?.message ?? err).toLowerCase().includes('timeout')) logger.warn(`ai_openai_timeout: ${kind}`);
     logger.warn(`ai_analysis_failed: ${kind}: ${err?.message ?? err}`);
     logger.info(`ai_fallback_used: ${kind}`);
     const text = fallback();

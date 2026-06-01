@@ -12,7 +12,7 @@ export function formatPortfolioFallback(ctx: AiPortfolioContext): string {
   return `🧠 <b>AI-разбор портфеля</b>
 
 <b>Состояние:</b>
-${positionsText}
+${ctx.source.startsWith('⚠️') ? `${ctx.source}\n` : ''}${positionsText}
 
 Кэш: <b>${formatRub(cashRub)}</b>
 Доля кэша: <b>${cashShare.toFixed(1)}%</b>

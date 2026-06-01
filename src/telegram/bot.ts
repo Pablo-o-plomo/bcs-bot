@@ -18,7 +18,8 @@ import { scanMarket, getTopList } from '../market/scanner';
 import { formatMarketOverview, formatScanner, formatTopList } from '../market/formatter';
 import type { TopListMode } from '../market/types';
 import { reviewTrade } from '../ai/tradeReview';
-import { analyzeDeal, analyzeMarket, analyzePortfolio, analyzeRisk } from '../ai/analyzer';
+import { analyzeDeal, analyzeMarket, analyzePortfolio } from '../ai/analyzer';
+import { formatPortfolioFallback } from '../ai/formatter';
 import {
   ensureUser,
   getBrokerFee,
@@ -196,10 +197,22 @@ async function renderMenuScreen(chatIdValue: string, messageId: number, command:
   }
 
   const targetMessageId = await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю...</b>', getNavigationKeyboard());
-  const text = await buildMenuScreenText(command, telegramId);
-  await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
-  logger.info(`screen_rendered: ${command}`);
-  if (command.startsWith('/submenu_')) logger.info(`submenu_rendered: ${command}`);
+  const aiCommand = isAiCommand(command);
+  if (aiCommand) logger.info(`ai_callback_started: ${command}`);
+  try {
+    const textPromise = buildMenuScreenText(command, telegramId);
+    const text = aiCommand
+      ? await withTimeout(textPromise, 5000, buildAiTimeoutFallback(command, telegramId), `ai_callback:${command}`)
+      : await textPromise;
+    await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
+    logger.info(`screen_rendered: ${command}`);
+    if (command.startsWith('/submenu_')) logger.info(`submenu_rendered: ${command}`);
+    if (aiCommand) logger.info(`ai_callback_finished: ${command}`);
+  } catch (err: any) {
+    if (aiCommand) logger.warn(`ai_callback_failed: ${command}: ${err?.message ?? err}`);
+    const text = aiCommand ? buildAiExceptionFallback(command, telegramId) : buildUiScreen('⚠️ <b>Ошибка</b>', 'BCS Assistant Bot', 'Не удалось загрузить раздел. Вернитесь в главное меню.', new Date().toISOString(), false);
+    await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
+  }
 }
 
 async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
@@ -239,6 +252,46 @@ async function buildMenuScreenText(command: string, telegramId: string): Promise
   if (command === '/set_deposit' || command === '/set_risk' || command === '/set_daily_loss' || command === '/set_max_positions' || command === '/set_tariff') return buildSettingsActionScreen(command, telegramId);
   if (command === '/help') return buildHelp();
   return buildWelcomeScreen();
+}
+
+
+
+function isAiCommand(command: string): boolean {
+  return ['/ai_analysis', '/ai_portfolio', '/ai_market', '/ai_market_summary', '/ai_risk', '/ai_deal', '/ai_trade'].includes(command);
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const timeout = new Promise<T>(resolve => {
+    timeoutId = globalThis.setTimeout(() => {
+      logger.warn(`ai_timeout: ${label}`);
+      resolve(fallback);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId);
+  }
+}
+
+function buildAiTimeoutFallback(command: string, telegramId: string): string {
+  logger.info(`ai_fallback_used: timeout:${command}`);
+  if (command === '/ai_risk') return buildAiRiskLocalFallback(telegramId, true);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  return buildAiExceptionFallback(command, telegramId);
+}
+
+function buildAiExceptionFallback(command: string, telegramId: string): string {
+  logger.info(`ai_fallback_used: exception:${command}`);
+  if (command === '/ai_risk') return buildAiRiskLocalFallback(telegramId, true);
+  return buildUiScreen('⚠️ <b>AI-анализ временно недоступен</b>', 'Локальный rule-based fallback', `⚠️ AI-анализ временно недоступен. Показываю базовую оценку.
+
+Сценарий: режим наблюдения / paper mode.
+Риск: не открывать реальные сделки без плана, стопа и подтверждения условий входа.
+Что проверить: рыночный фон, объем, RR и дневной лимит риска.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`, new Date().toISOString(), false);
 }
 
 
@@ -588,29 +641,49 @@ function normalizeTopMode(value?: string): TopListMode {
 }
 
 
+
+async function withBcsPortfolioTimeout(): Promise<Awaited<ReturnType<typeof bcsApiClient.getPortfolio>> | null> {
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const timeout = new Promise<null>(resolve => {
+    timeoutId = globalThis.setTimeout(() => {
+      logger.warn('ai_bcs_timeout: portfolio');
+      logger.info('ai_fallback_used: portfolio_bcs_timeout');
+      resolve(null);
+    }, 3000);
+  });
+  try {
+    return await Promise.race([bcsApiClient.getPortfolio(), timeout]);
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId);
+  }
+}
+
 async function buildAiPortfolioAnalysis(telegramId: string): Promise<string> {
   const settings = getUserSettings(telegramId);
   if (config.bcsApi.enabled) {
     try {
-      const portfolio = await bcsApiClient.getPortfolio();
-      return analyzePortfolio({
-        balance: portfolio.money.balance,
-        freeCash: portfolio.money.freeCash,
-        portfolioValue: portfolio.money.portfolioValue,
-        dayPnl: portfolio.money.dayPnl,
-        totalPnl: portfolio.money.totalPnl,
-        cash: portfolio.money.cash,
-        positions: portfolio.positions,
-        settings,
-        source: 'BCS API',
-      });
+      const portfolio = await withBcsPortfolioTimeout();
+      if (portfolio) {
+        return analyzePortfolio({
+          balance: portfolio.money.balance,
+          freeCash: portfolio.money.freeCash,
+          portfolioValue: portfolio.money.portfolioValue,
+          dayPnl: portfolio.money.dayPnl,
+          totalPnl: portfolio.money.totalPnl,
+          cash: portfolio.money.cash,
+          positions: portfolio.positions,
+          settings,
+          source: 'BCS API',
+        });
+      }
     } catch (err: any) {
       logger.warn(`ai_analysis_failed: portfolio_bcs: ${err?.message ?? err}`);
     }
   }
   const snapshot = getLatestBcsPortfolioSnapshot();
   const localPositions = getBcsPositions();
-  return analyzePortfolio({
+  logger.info('ai_fallback_used: portfolio_local');
+  const context = {
     balance: snapshot?.balance ?? settings.depositRub,
     freeCash: snapshot?.freeCash ?? 0,
     portfolioValue: snapshot?.portfolioValue ?? 0,
@@ -628,8 +701,9 @@ async function buildAiPortfolioAnalysis(telegramId: string): Promise<string> {
       portfolioSharePercent: position.portfolioSharePercent,
     })),
     settings,
-    source: 'Локальный snapshot',
-  });
+    source: config.bcsApi.enabled ? '⚠️ BCS API долго отвечает. Показываю локальный анализ.' : 'Локальный snapshot',
+  };
+  return formatPortfolioFallback(context);
 }
 
 async function buildAiMarketAnalysis(): Promise<string> {
@@ -641,20 +715,32 @@ async function buildAiMarketAnalysis(): Promise<string> {
 }
 
 async function buildAiRiskAnalysis(telegramId: string): Promise<string> {
+  logger.info('ai_analysis_started: risk');
+  const text = buildAiRiskLocalFallback(telegramId);
+  logger.info('ai_analysis_finished: risk');
+  return text;
+}
+
+
+function buildAiRiskLocalFallback(telegramId: string, warning = false): string {
+  logger.info('ai_fallback_used: risk_local');
   const settings = getUserSettings(telegramId);
   const positions = getBcsPositions();
   const exposureRub = positions.reduce((sum, position) => sum + Number(position.currentPrice ?? 0) * Number(position.quantity ?? 0), 0);
-  const snapshot = getLatestBcsPortfolioSnapshot();
-  return analyzeRisk({
-    settings,
-    exposureRub,
-    cashRub: snapshot?.freeCash ?? 0,
-    positionsCount: positions.length,
-    paperMode: config.execution.mode === 'paper',
-    executionMode: config.execution.mode,
-    readOnly: config.readOnlyMode,
-    orderExecution: config.allowOrderExecution && !config.readOnlyMode,
-  });
+  const exposureShare = settings.depositRub > 0 ? (exposureRub / settings.depositRub) * 100 : 0;
+  const maxRiskRub = settings.depositRub * (settings.riskPerTrade / 100);
+  return buildUiScreen('🧠 <b>AI-риск</b>', 'Локальный rule-based fallback', `${warning ? '⚠️ AI-анализ временно недоступен. Показываю базовую оценку.\n\n' : ''}Депозит: <b>${formatNumber(settings.depositRub)} ₽</b>
+Риск на сделку: <b>${settings.riskPerTrade.toFixed(2)}%</b> ≈ <b>${formatNumber(maxRiskRub)} ₽</b>
+Дневная просадка: <b>${settings.maxDailyLoss.toFixed(2)}%</b>
+Макс. позиций: <b>${settings.maxOpenPositions}</b>
+
+Exposure: <b>${formatNumber(exposureRub)} ₽</b> / <b>${exposureShare.toFixed(1)}%</b>
+Execution mode: <b>${config.execution.mode}</b>
+Read only: <b>${config.readOnlyMode ? 'true' : 'false'}</b>
+
+Сценарий: контролировать размер позиции и ждать подтверждения условий входа.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`, new Date().toISOString(), false);
 }
 
 function buildAiDealPrompt(telegramId: string): string {
@@ -668,7 +754,7 @@ async function processAiDeal(chat: string, telegramId: string, text: string): Pr
   const [tickerRaw, directionRaw] = text.trim().split(/\s+/);
   const direction = directionRaw?.toLowerCase();
   if (!tickerRaw || (direction !== 'long' && direction !== 'short')) return send(chat, 'Отправьте тикер и направление, например: <code>GAZP long</code>');
-  const snapshot = await getMarketSnapshot();
+  const snapshot = await withTimeout(getMarketSnapshot(), 3000, { status: 'unknown', instruments: [], updatedAt: new Date().toISOString(), source: 'cached/mock', fallback: true }, 'ai_deal_market');
   const ticker = tickerRaw.toUpperCase();
   const instrument = snapshot.instruments.find(item => item.ticker.toUpperCase() === ticker);
   await send(chat, await analyzeDeal({ ticker, direction, instrument, settings: getUserSettings(telegramId), marketStatus: snapshot.status }));
