@@ -11,6 +11,8 @@ import { logger } from './utils/logger';
 import { BUILD_VERSION } from './version';
 import { syncPortfolio } from './sync/portfolioSync';
 import { syncTrades } from './sync/tradeSync';
+import { syncPositions } from './sync/positionSync';
+import { bcsApiClient } from './broker/bcs/client';
 
 async function bootstrap(): Promise<void> {
   fs.mkdirSync(path.join(process.cwd(), 'logs'), { recursive: true });
@@ -21,6 +23,7 @@ async function bootstrap(): Promise<void> {
   logger.info(`   BCS API enabled: ${config.bcsApi.enabled}, readOnly=${config.readOnlyMode}, orderExecution=${config.allowOrderExecution}`);
 
   initDb();
+  await bcsApiClient.connect();
   initTelegramBot();
 
   const app = express();
@@ -32,6 +35,8 @@ async function bootstrap(): Promise<void> {
     bcsApiEnabled: config.bcsApi.enabled,
     readOnlyMode: config.readOnlyMode,
     orderExecutionEnabled: config.allowOrderExecution && !config.readOnlyMode,
+    bcsApiConnected: bcsApiClient.getStatus().connected,
+    bcsApiLastError: bcsApiClient.getStatus().lastError,
     executionMode: config.execution.mode,
     allowedSymbols: config.execution.allowedSymbols,
     emergencyStopEnabled: config.execution.emergencyStopEnabled,
@@ -45,9 +50,11 @@ async function bootstrap(): Promise<void> {
 
   setInterval(() => {
     syncPortfolio().catch(() => undefined);
+    syncPositions().catch(() => undefined);
     syncTrades().catch(() => undefined);
   }, 60_000);
   syncPortfolio().catch(() => undefined);
+  syncPositions().catch(() => undefined);
   syncTrades().catch(() => undefined);
 
   await sendAdminMessage(`✅ BCS Assistant Bot restarted\nBuild: ${BUILD_VERSION}\nАвтоторговля отключена.\n\n⚠️ Это не инвестиционная рекомендация.`).catch((err: any) => logger.warn(`Startup notification failed: ${err.message}`));

@@ -10,6 +10,7 @@ export async function syncPortfolio(): Promise<void> {
   try {
     const portfolio = await bcsApiClient.getPortfolio();
     saveBcsPortfolioSnapshot(portfolio);
+    bcsApiClient.markSyncSuccess();
     logger.info(`BCS sync portfolio: positions=${portfolio.positions.length}`);
   } catch (err: any) {
     logger.warn(`BCS sync portfolio failed: ${err.message}`);

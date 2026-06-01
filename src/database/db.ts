@@ -331,10 +331,19 @@ export function getRecentSignals(): any[] { return []; }
 export function saveBcsPortfolioSnapshot(portfolio: import('../broker/bcs/types').BcsPortfolio): void {
   db.prepare('INSERT INTO bcs_portfolio_snapshots (balance, freeCash, portfolioValue, dayPnl, totalPnl, currency) VALUES (?, ?, ?, ?, ?, ?)')
     .run(portfolio.money.balance, portfolio.money.freeCash, portfolio.money.portfolioValue, portfolio.money.dayPnl, portfolio.money.totalPnl, portfolio.money.currency);
+  upsertBcsPositions(portfolio.positions);
+}
+
+export function upsertBcsPositions(positions: import('../broker/bcs/types').BcsPosition[]): number {
   const stmt = db.prepare(`INSERT INTO bcs_positions (ticker, name, quantity, averagePrice, currentPrice, unrealizedPnl, portfolioSharePercent, instrumentType, classCode, syncedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(ticker) DO UPDATE SET name = excluded.name, quantity = excluded.quantity, averagePrice = excluded.averagePrice, currentPrice = excluded.currentPrice, unrealizedPnl = excluded.unrealizedPnl, portfolioSharePercent = excluded.portfolioSharePercent, instrumentType = excluded.instrumentType, classCode = excluded.classCode, syncedAt = CURRENT_TIMESTAMP`);
-  for (const position of portfolio.positions) stmt.run(position.ticker, position.name ?? null, position.quantity, position.averagePrice, position.currentPrice, position.unrealizedPnl, position.portfolioSharePercent, position.instrumentType ?? null, position.classCode ?? null);
+  let changed = 0;
+  for (const position of positions) {
+    const result = stmt.run(position.ticker, position.name ?? null, position.quantity, position.averagePrice, position.currentPrice, position.unrealizedPnl, position.portfolioSharePercent, position.instrumentType ?? null, position.classCode ?? null);
+    changed += Number(result.changes ?? 0);
+  }
+  return changed;
 }
 
 export function getLatestBcsPortfolioSnapshot(): any | null {

@@ -1,11 +1,14 @@
 export interface BcsApiStatus {
   enabled: boolean;
   connected: boolean;
+  accountVerified: boolean;
   readOnly: boolean;
   orderExecutionEnabled: boolean;
   accountId?: string;
   clientId?: string;
   lastError?: string;
+  lastCheckedAt?: string;
+  lastSyncAt?: string;
 }
 
 export interface BcsMoneySummary {
@@ -59,7 +62,9 @@ export interface BcsInstrument {
 
 export interface BcsMarketData {
   ticker: string;
+  classCode?: string;
   price: number | null;
+  lastPrice: number | null;
   volume: number | null;
   bid: number | null;
   ask: number | null;
@@ -67,6 +72,8 @@ export interface BcsMarketData {
   spreadPercent: number | null;
   volatility: number | null;
   sessionStatus: string;
+  source: 'BCS API' | 'MOEX ISS fallback';
+  updatedAt: string;
 }
 
 export interface BcsCommissionBreakdown {
@@ -75,4 +82,13 @@ export interface BcsCommissionBreakdown {
   fees: number;
   estimatedSlippage: number;
   details: string[];
+}
+
+export interface BcsReadOnlyOrderPayload {
+  ticker: string;
+  classCode?: string;
+  side?: string;
+  orderType?: string;
+  quantity?: number;
+  price?: number;
 }

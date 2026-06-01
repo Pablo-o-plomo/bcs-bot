@@ -10,6 +10,7 @@ export async function syncTrades(): Promise<void> {
   try {
     const trades = await bcsApiClient.getTrades();
     const inserted = upsertBcsTrades(trades);
+    bcsApiClient.markSyncSuccess();
     logger.info(`BCS sync trades: received=${trades.length}, inserted=${inserted}`);
   } catch (err: any) {
     logger.warn(`BCS sync trades failed: ${err.message}`);

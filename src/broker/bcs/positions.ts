@@ -1,9 +1,10 @@
+import { config } from '../../config';
 import type { BcsApiClient } from './client';
 import type { BcsPosition } from './types';
 
 export async function getPositions(client: BcsApiClient): Promise<BcsPosition[]> {
-  const raw = await client.request<any>('GET', '/trade-api-bff-portfolio/api/v1/positions');
-  return normalizePositions(raw?.positions ?? raw?.records ?? raw ?? []);
+  const raw = await client.request<any>('GET', '/trade-api-bff-portfolio/api/v1/portfolio', undefined, config.bcsApi.accountId ? { accountId: config.bcsApi.accountId } : undefined);
+  return normalizePositions(raw?.positions ?? raw?.securities ?? raw?.assets ?? raw?.records ?? raw ?? []);
 }
 
 export function normalizePositions(rows: any[]): BcsPosition[] {

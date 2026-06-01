@@ -378,13 +378,14 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
       logger.warn(`Real portfolio fallback: ${err.message}`);
     }
   }
+  const fallbackNotice = config.bcsApi.enabled ? '⚠️ BCS API временно недоступен. Показываю локальные данные.\n\n' : '';
   const snapshot = getLatestBcsPortfolioSnapshot();
   const positions = getBcsPositions();
   if (snapshot) {
     const lines = positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
-    return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API (последний sync)</b>\n\nБаланс: <b>${formatRub(snapshot.balance)}</b>\nСвободные средства: <b>${formatRub(snapshot.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(snapshot.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+    return `${fallbackNotice}📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API (последний sync)</b>\n\nБаланс: <b>${formatRub(snapshot.balance)}</b>\nСвободные средства: <b>${formatRub(snapshot.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(snapshot.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
   }
-  return `${buildApiStatus()}\n\n${buildPortfolio(telegramId)}`;
+  return `${fallbackNotice}${buildApiStatus()}\n\n${buildPortfolio(telegramId)}`;
 }
 
 function buildPaperModeStatus(): string {
@@ -407,7 +408,37 @@ function buildEmergencyStopStatus(): string {
 }
 
 function buildApiStatus(): string {
-  return `🔌 <b>Статус БКС API</b>\n\nBCS API: <b>${config.bcsApi.enabled && config.bcsApi.token ? '✅ подключен' : '❌ не подключен'}</b>\nREAD ONLY: <b>${config.readOnlyMode ? '✅ enabled' : '❌ disabled'}</b>\nORDER EXECUTION: <b>${config.allowOrderExecution ? '⚠️ enabled' : '❌ disabled'}</b>\nAccount ID: <code>${config.bcsApi.accountId || 'не задан'}</code>\nClient ID: <code>${config.bcsApi.clientId}</code>\n\nТокен не выводится и не логируется.`;
+  const status = bcsApiClient.getStatus();
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  const lastSync = status.lastSyncAt ?? snapshot?.syncedAt ?? 'нет данных';
+  return `━━━━━━━━━━━━━━
+🔌 <b>BCS API STATUS</b>
+━━━━━━━━━━━━━━
+
+API:
+<b>${status.connected ? '✅ connected' : '❌ not connected'}</b>
+
+Read only:
+<b>${config.readOnlyMode ? '✅ enabled' : '❌ disabled'}</b>
+
+Order execution:
+<b>${config.allowOrderExecution && !config.readOnlyMode ? '⚠️ enabled' : '❌ disabled'}</b>
+
+Account:
+<code>${config.bcsApi.accountId || 'не задан'}</code>
+
+Client ID:
+<code>${config.bcsApi.clientId}</code>
+
+Last sync:
+<b>${lastSync}</b>
+
+${status.lastError ? `Last error:
+<code>${status.lastError}</code>
+
+` : ''}━━━━━━━━━━━━━━
+
+Токен не выводится и не логируется.`;
 }
 
 function buildPortfolio(telegramId: string): string {
