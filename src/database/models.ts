@@ -1,144 +1,111 @@
-// ─── Market Data ──────────────────────────────────────────────────────────────
-export interface Candle {
-  timestamp: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
 export type Direction = 'LONG' | 'SHORT';
-export type SignalStatus = 'pending' | 'active' | 'cancelled' | 'expired';
+export type InstrumentType = 'stock' | 'future' | 'currency' | 'bond' | 'fund' | 'option';
+export type TradeStatus = 'draft' | 'open' | 'closed' | 'cancelled';
 
-export interface SignalIndicatorSummary {
-  ema20: number;
-  ema50: number;
-  ema200: number;
-  emaAlignment: string;
-  rsi: number;
-  rsiState: string;
-  macd: 'bullish' | 'bearish' | 'neutral';
-  macdState: string;
-  atr: number;
-  atrPercent: number;
-  volumeRatio: number;
-  volumeState: 'none' | 'low' | 'weak' | 'normal' | 'high';
+export interface User {
+  id: number;
+  telegramId: string;
+  createdAt: string;
 }
 
-export interface Signal {
-  id?: number;
-  symbol: string;
+export interface UserSettings {
+  id: number;
+  userId: number;
+  depositRub: number;
+  riskPerTrade: number;
+  maxDailyLoss: number;
+  maxOpenPositions: number;
+}
+
+export interface Instrument {
+  id: number;
+  ticker: string;
+  name: string;
+  type: InstrumentType;
+  market: string;
+}
+
+export interface BrokerFee {
+  id: number;
+  userId: number;
+  tariffName: string;
+  stockFeePercent: number;
+  currencyFeePercent: number;
+  futuresFeePerContract: number;
+  extraCurrencyBuyFeePercent: number;
+}
+
+export interface TradeInput {
+  userId: number;
+  ticker: string;
+  instrumentType: InstrumentType;
   direction: Direction;
   entryPrice: number;
+  quantity: number;
   stopLoss: number;
-  takeProfit1: number;
-  takeProfit2: number;
-  takeProfit3: number;
-  riskPercent: number;
-  positionSize: number;
-  leverage: number;
-  riskReward: number;
-  confidence: number;
-  reasons: string[];
-  warnings: string[];
-  timeframeConfirmations: string[];
-  indicatorSummary: SignalIndicatorSummary;
-  cancelConditions: string[];
-  timeframe: string;
-  status: SignalStatus;
-  createdAt?: string;
-  indicators?: IndicatorSnapshot;
+  takeProfit: number;
+  commission: number;
+  status?: TradeStatus;
+  pnl?: number;
+  comment?: string;
+  rr?: number;
 }
 
-export type TradeLifecycleStatus =
-  | 'open'
-  | 'tp1_hit'
-  | 'tp2_hit'
-  | 'tp3_hit'
-  | 'breakeven'
-  | 'partially_closed'
-  | 'closed_win'
-  | 'closed_loss'
-  | 'closed_breakeven'
-  | 'cancelled';
-
-export type TradeStatus = TradeLifecycleStatus | 'closed_tp1' | 'closed_tp2' | 'closed_tp3' | 'closed_sl' | 'closed_manual';
-export type TradeResult = 'win' | 'loss' | 'breakeven';
-
-export interface TradeProgress {
-  tp1: boolean;
-  tp2: boolean;
-  tp3: boolean;
-  breakeven: boolean;
-  partiallyClosed: boolean;
-}
-
-export interface Trade {
-  id?: number;
-  signalId: number;
-  symbol: string;
-  direction: Direction;
-  entryPrice: number;
+export interface Trade extends TradeInput {
+  id: number;
   exitPrice?: number;
-  stopLoss: number;
-  takeProfit1: number;
-  takeProfit2: number;
-  takeProfit3: number;
-  positionSize: number;
-  leverage: number;
-  status: TradeStatus;
-  result?: TradeResult;
-  pnlPercent?: number;
-  pnlUsdt?: number;
-  finalPnl?: number;
-  currentPnl?: number;
-  closeReason?: string;
-  entryReasons: string[];
-  exitReason?: string;
-  exitAnalysis?: string;
-  improvements?: string[];
-  errorTags?: ErrorTag[];
-  indicatorsAtEntry?: IndicatorSnapshot;
-  progress?: TradeProgress;
-  tp1HitAt?: string;
-  tp2HitAt?: string;
-  tp3HitAt?: string;
-  breakevenMovedAt?: string;
-  openedAt?: string;
+  createdAt: string;
   closedAt?: string;
 }
 
-export interface IndicatorSnapshot {
-  price: number;
-  ema20: number;
-  ema50: number;
-  ema200: number;
-  rsi: number;
-  macdLine: number;
-  macdSignal: number;
-  macdHistogram: number;
-  atr: number;
-  volumeAvg: number;
-  volumeCurrent: number;
-  trend: 'bullish' | 'bearish' | 'neutral';
-  timeframe: string;
-  timestamp: number;
+export interface Position {
+  id: number;
+  userId: number;
+  ticker: string;
+  direction: Direction;
+  avgEntryPrice: number;
+  quantity: number;
+  stopLoss: number;
+  takeProfit: number;
+  currentPrice?: number;
+  unrealizedPnl: number;
+  createdAt: string;
 }
 
-export type ErrorTag =
-  | 'late_entry'
-  | 'weak_volume'
-  | 'false_breakout'
-  | 'bad_risk_reward'
-  | 'trend_against_trade'
-  | 'overtrading'
-  | 'news_volatility'
-  | 'stop_too_tight'
-  | 'stop_too_wide'
-  | 'missed_target'
-  | 'early_exit'
-  | 'correct_execution';
+export interface AiReview {
+  id?: number;
+  tradeId?: number;
+  reviewText: string;
+  score: number;
+  createdAt?: string;
+}
+
+// Compatibility aliases for older report helpers still kept in the project.
+export type BcsTradeInput = {
+  telegramId: string;
+  symbol: string;
+  instrumentType: InstrumentType;
+  direction: Direction;
+  entryPrice: number;
+  quantity: number;
+  stopLoss: number;
+  takeProfit: number;
+  commissionRub?: number;
+  comment?: string;
+};
+
+export interface RiskCalculation {
+  positionAmountRub: number;
+  riskRub: number;
+  riskPercentOfDeposit: number;
+  potentialProfitRub: number;
+  riskReward: number;
+  commissionRub: number;
+  pnlAtTakeProfitRub: number;
+  pnlAtStopRub: number;
+}
+
+export type ErrorTag = 'bad_risk_reward' | 'overtrading' | 'stop_too_tight' | 'stop_too_wide' | 'correct_execution';
 
 export interface AnalysisReport {
   id?: number;
@@ -160,11 +127,9 @@ export interface AnalysisReport {
 
 export interface BotState {
   isPaused: boolean;
-  pausedUntil?: string;
-  pauseReason?: string;
   consecutiveLosses: number;
   dailyLossPercent: number;
   lastDailyReset: string;
   totalBalance: number;
-  mode: 'demo' | 'live' | 'defensive';
+  mode: 'analytics';
 }
