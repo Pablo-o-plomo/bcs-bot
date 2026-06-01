@@ -124,19 +124,6 @@ function createTables(): void {
       recommendations TEXT NOT NULL,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-
-    CREATE TABLE IF NOT EXISTS bot_state (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      isPaused INTEGER NOT NULL DEFAULT 0,
-      consecutiveLosses INTEGER NOT NULL DEFAULT 0,
-      dailyLossPercent REAL NOT NULL DEFAULT 0,
-      lastDailyReset TEXT NOT NULL DEFAULT CURRENT_DATE,
-      totalBalance REAL NOT NULL DEFAULT ${config.trading.defaultDepositRub},
-      mode TEXT NOT NULL DEFAULT 'analytics',
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    INSERT OR IGNORE INTO bot_state (id) VALUES (1);
   `);
 }
 

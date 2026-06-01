@@ -29,7 +29,7 @@ import type { Direction, InstrumentType, TradeInput } from '../database/models';
 let bot: TelegramBot;
 
 type DraftStep = 'instrumentType' | 'ticker' | 'direction' | 'entryPrice' | 'quantity' | 'stopLoss' | 'takeProfit' | 'comment' | 'confirm';
-interface DraftTrade { step: DraftStep; data: Partial<TradeInput>; summary?: string }
+interface DraftTrade { step: DraftStep; data: Partial<TradeInput>; promptMessageId?: number; summary?: string }
 const drafts = new Map<string, DraftTrade>();
 const textModes = new Map<string, 'instrument_analysis' | 'ai_review' | 'set_deposit' | 'set_risk' | 'set_daily_loss' | 'set_max_positions' | 'set_tariff'>();
 
@@ -101,12 +101,67 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
 
 async function startAddTrade(chatIdValue: string, telegramId: string): Promise<void> {
   const user = ensureUser(telegramId);
-  drafts.set(telegramId, { step: 'instrumentType', data: { userId: user.id } });
-  await bot.sendMessage(chatIdValue, '📝 Выберите тип инструмента:', { reply_markup: { inline_keyboard: [
-    [{ text: 'Акция', callback_data: 'draft:type:stock' }, { text: 'Фьючерс', callback_data: 'draft:type:future' }],
-    [{ text: 'Валюта', callback_data: 'draft:type:currency' }, { text: 'Облигация', callback_data: 'draft:type:bond' }],
-    [{ text: 'Фонд', callback_data: 'draft:type:fund' }],
-  ] } });
+  const message = await bot.sendMessage(chatIdValue, '📝 Выберите тип инструмента:', {
+    reply_markup: getInstrumentTypeKeyboard(),
+  });
+  drafts.set(telegramId, { step: 'instrumentType', data: { userId: user.id }, promptMessageId: message.message_id });
+}
+
+
+function getInstrumentTypeKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
+  return {
+    inline_keyboard: [
+      [{ text: 'Акция', callback_data: 'draft:type:stock' }, { text: 'Фьючерс', callback_data: 'draft:type:future' }],
+      [{ text: 'Валюта', callback_data: 'draft:type:currency' }, { text: 'Облигация', callback_data: 'draft:type:bond' }],
+      [{ text: 'Фонд', callback_data: 'draft:type:fund' }],
+      [{ text: '❌ Отмена', callback_data: 'draft:cancel' }],
+    ],
+  };
+}
+
+function getTickerPrompt(type: InstrumentType): string {
+  const prompts: Record<InstrumentType, string> = {
+    stock: 'Вы выбрали: Акция.\nВведите тикер российской акции: SBER, GAZP, LKOH, YNDX, TATN.\nВажно: шорт доступен не по всем акциям.',
+    future: 'Вы выбрали: Фьючерс.\nВведите код фьючерса: Si, BR, GOLD, IMOEX.\nФьючерсы удобнее для шорта и активной торговли, но требуют учета ГО и риска.',
+    currency: 'Вы выбрали: Валюта.\nВведите валютный инструмент: USD/RUB, CNY/RUB.\nВажно: комиссия БКС по валюте отличается от акций.',
+    bond: 'Вы выбрали: Облигация.\nВведите тикер или ISIN облигации.\nОблигации больше подходят для спокойной доходности, не для активного трейдинга.',
+    fund: 'Вы выбрали: Фонд.\nВведите тикер фонда: SBMX, TMOS, AKME.\nФонды чаще подходят для среднесрочного удержания.',
+    option: 'Вы выбрали: Опцион.\nВведите код опциона.\nОпционы требуют отдельного учета риска и ликвидности.',
+  };
+  return prompts[type];
+}
+
+function getTickerPromptKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
+  return {
+    inline_keyboard: [
+      [{ text: 'Акция', callback_data: 'draft:type:stock' }, { text: 'Фьючерс', callback_data: 'draft:type:future' }],
+      [{ text: 'Валюта', callback_data: 'draft:type:currency' }, { text: 'Облигация', callback_data: 'draft:type:bond' }],
+      [{ text: 'Фонд', callback_data: 'draft:type:fund' }],
+      [{ text: '⬅️ Назад', callback_data: 'draft:back' }, { text: '❌ Отмена', callback_data: 'draft:cancel' }],
+    ],
+  };
+}
+
+async function updateInstrumentTypePrompt(chatIdValue: string, draft: DraftTrade, type: InstrumentType, messageId?: number): Promise<void> {
+  const targetMessageId = messageId ?? draft.promptMessageId;
+  await editDraftMessage(chatIdValue, targetMessageId, getTickerPrompt(type), getTickerPromptKeyboard());
+}
+
+async function editDraftMessage(chatIdValue: string, messageId: number | undefined, text: string, replyMarkup?: TelegramBot.SendMessageOptions['reply_markup']): Promise<void> {
+  if (messageId) {
+    try {
+      await bot.editMessageText(text, {
+        chat_id: chatIdValue,
+        message_id: messageId,
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup,
+      });
+      return;
+    } catch (err: any) {
+      logger.warn(`Failed to edit draft message: ${err.message}`);
+    }
+  }
+  await bot.sendMessage(chatIdValue, text, { parse_mode: 'HTML', reply_markup: replyMarkup });
 }
 
 async function handleDraftCallback(query: TelegramBot.CallbackQuery): Promise<void> {
@@ -119,8 +174,17 @@ async function handleDraftCallback(query: TelegramBot.CallbackQuery): Promise<vo
   if (action === 'type') {
     draft.data.instrumentType = value as InstrumentType;
     draft.step = 'ticker';
+    draft.promptMessageId = query.message?.message_id ?? draft.promptMessageId;
     drafts.set(telegramId, draft);
-    return send(chat, 'Введите тикер, например SBER, GAZP, LKOH, IMOEX, Si, BR, GOLD:');
+    logger.info(`Instrument type selected: user=${telegramId}, type=${value}`);
+    return updateInstrumentTypePrompt(chat, draft, value as InstrumentType, query.message?.message_id);
+  }
+  if (action === 'back') {
+    draft.step = 'instrumentType';
+    draft.data.instrumentType = undefined;
+    draft.data.ticker = undefined;
+    drafts.set(telegramId, draft);
+    return editDraftMessage(chat, query.message?.message_id ?? draft.promptMessageId, '📝 Выберите тип инструмента:', getInstrumentTypeKeyboard());
   }
   if (action === 'direction') {
     draft.data.direction = value as Direction;
@@ -136,7 +200,7 @@ async function handleDraftCallback(query: TelegramBot.CallbackQuery): Promise<vo
   }
   if (action === 'cancel') {
     drafts.delete(telegramId);
-    return send(chat, '❌ Добавление сделки отменено.');
+    return editDraftMessage(chat, query.message?.message_id ?? draft.promptMessageId, '❌ Добавление сделки отменено.');
   }
 }
 

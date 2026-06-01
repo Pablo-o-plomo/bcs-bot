@@ -13,6 +13,7 @@ declare module 'node-telegram-bot-api' {
     on(event: string, callback: (...args: any[]) => void): void;
     sendMessage(chatId: any, text: string, options?: any): Promise<any>;
     answerCallbackQuery(callbackQueryId: string, options?: any): Promise<any>;
+    editMessageText(text: string, options?: any): Promise<any>;
   }
   namespace TelegramBot {
     type Message = any;
