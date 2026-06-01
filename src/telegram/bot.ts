@@ -2,7 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { BUILD_VERSION } from '../version';
-import { getMainKeyboard, handleMenuCallback, setAdminCommandHandler } from './adminMenu';
+import { getMainKeyboard, getNavigationKeyboard, handleMenuCallback, setAdminCommandHandler } from './adminMenu';
 import { calculateBcsCommission } from '../broker/bcsCommission';
 import { bcsApiClient } from '../broker/bcs/client';
 import { buildRawDebug } from '../broker/bcs/limits';
@@ -53,7 +53,8 @@ export function initTelegramBot(): TelegramBot {
 }
 
 function registerCommands(): void {
-  bot.onText(/^\/start|^\/menu/, handleStart);
+  bot.onText(/^\/start(?:\s|$)/, handleStart);
+  bot.onText(/^\/menu(?:\s|$)/, handleMenu);
   bot.onText(/^\/portfolio/, msg => handleCommand(chatId(msg), '/portfolio', fromId(msg)));
   bot.onText(/^\/limits/, msg => handleCommand(chatId(msg), '/limits', fromId(msg)));
   bot.onText(/^\/debug_limits/, msg => handleCommand(chatId(msg), '/debug_limits', fromId(msg)));
@@ -95,11 +96,34 @@ function registerCommands(): void {
 
 async function handleStart(msg: TelegramBot.Message): Promise<void> {
   ensureUser(fromId(msg));
-  await bot.sendMessage(msg.chat.id, `🤖 <b>BCS Assistant Bot</b>\n\nДневник сделок, риск-менеджмент, комиссии БКС, MOEX-анализ и AI-разбор.\n\n⚠️ <i>Это не инвестиционная рекомендация. Автоторговля отключена.</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard() });
+  await openMainMenu(msg.chat.id.toString());
 }
 
-async function handleCommand(chatIdValue: string, command: string, telegramId = chatIdValue): Promise<void> {
+async function handleMenu(msg: TelegramBot.Message): Promise<void> {
+  ensureUser(fromId(msg));
+  await openMainMenu(msg.chat.id.toString());
+}
+
+async function openMainMenu(chatIdValue: string): Promise<void> {
+  logger.info('Telegram menu opened');
+  await bot.sendMessage(chatIdValue, buildWelcomeScreen(), { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
+}
+
+function buildWelcomeScreen(): string {
+  return `🤖 <b>BCS Assistant Bot</b>
+
+━━━━━━━━━━━━━━
+✅ <b>Подключение к BCS API активно.</b>
+🔒 <b>Автоторговля отключена.</b>
+🛡️ <b>Режим:</b> безопасный мониторинг.
+━━━━━━━━━━━━━━
+
+Выберите раздел:`;
+}
+
+async function handleCommand(chatIdValue: string, command: string, telegramId = chatIdValue, menuMessageId?: number): Promise<void> {
   ensureUser(telegramId);
+  if (menuMessageId) return renderMenuScreen(chatIdValue, menuMessageId, command, telegramId);
   if (command === '/portfolio' || command === '/real_portfolio') return send(chatIdValue, await buildRealPortfolio(telegramId));
   if (command === '/add_trade') return startAddTrade(chatIdValue, telegramId);
   if (command === '/analyze_instrument') return requestInstrument(chatIdValue, telegramId);
@@ -114,6 +138,11 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
     return send(chatIdValue, buildApiStatus());
   }
   if (command === '/limits') return send(chatIdValue, await buildLimits(telegramId));
+  if (command === '/ai_analysis' || command === '/market' || command === '/news') return send(chatIdValue, buildSectionInDevelopment());
+  if (command === '/help') return send(chatIdValue, buildHelp());
+  if (command === '/settings_menu') return send(chatIdValue, buildSettingsScreen(telegramId));
+  if (command === '/risk_menu') return send(chatIdValue, buildRiskManagement(telegramId));
+  if (command === '/daily_report_menu') return send(chatIdValue, buildReport(telegramId, 'day'));
   if (command === '/debug_limits') return send(chatIdValue, await buildDebugLimits(telegramId));
   if (command === '/debug_portfolio') return handleDebugPortfolio(chatIdValue, telegramId);
   if (command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
@@ -121,6 +150,50 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/risk_status') return send(chatIdValue, buildRiskStatus(telegramId));
   if (command === '/emergency_stop') return send(chatIdValue, buildEmergencyStopStatus());
   if (command === '/settings') return sendSettings(chatIdValue, telegramId);
+}
+
+
+async function renderMenuScreen(chatIdValue: string, messageId: number, command: string, telegramId: string): Promise<void> {
+  logger.info(`menu_navigation: command=${command}`);
+  if (command === '/menu') {
+    await editMenuMessage(chatIdValue, messageId, buildWelcomeScreen(), getMainKeyboard());
+    logger.info('screen_rendered: main_menu');
+    return;
+  }
+
+  await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю данные...</b>', getNavigationKeyboard());
+  const text = await buildMenuScreenText(command, telegramId);
+  await editMenuMessage(chatIdValue, messageId, text, getNavigationKeyboard());
+  logger.info(`screen_rendered: ${command}`);
+}
+
+async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
+  if (command === '/portfolio' || command === '/real_portfolio') return buildRealPortfolio(telegramId);
+  if (command === '/limits') return buildLimits(telegramId);
+  if (command === '/risk_menu') return buildRiskManagement(telegramId);
+  if (command === '/ai_analysis' || command === '/market' || command === '/news') return buildSectionInDevelopment();
+  if (command === '/help') return buildHelp();
+  if (command === '/daily_report_menu') return buildReport(telegramId, 'day');
+  if (command === '/settings_menu') return buildSettingsScreen(telegramId);
+  return buildWelcomeScreen();
+}
+
+async function editMenuMessage(chatIdValue: string, messageId: number, text: string, replyMarkup: TelegramBot.SendMessageOptions['reply_markup']): Promise<void> {
+  try {
+    await bot.editMessageText(text, {
+      chat_id: chatIdValue,
+      message_id: messageId,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
+  } catch (err: any) {
+    if (!String(err?.message ?? '').includes('message is not modified')) logger.warn(`Menu text edit failed: ${err.message}`);
+  }
+  try {
+    await (bot as any).editMessageReplyMarkup(replyMarkup, { chat_id: chatIdValue, message_id: messageId });
+  } catch (err: any) {
+    if (!String(err?.message ?? '').includes('message is not modified')) logger.warn(`Menu keyboard edit failed: ${err.message}`);
+  }
 }
 
 async function startAddTrade(chatIdValue: string, telegramId: string): Promise<void> {
@@ -384,13 +457,27 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
     try {
       const portfolio = await bcsApiClient.getPortfolio();
       const moneyLines = formatCashBalances(portfolio.money.cash);
-      const lines = portfolio.positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
-      return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API</b>\n\nБаланс: <b>${formatRub(portfolio.money.balance)}</b>\nСвободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>\n\n💰 <b>Деньги:</b>\n${moneyLines}\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+      const positionBlock = formatBcsPortfolioPositions(portfolio.positions, portfolio.money.cash.length > 0);
+      return `📊 <b>Реальный портфель</b>
+Источник: <b>БКС API</b>
+
+Баланс: <b>${formatRub(portfolio.money.balance)}</b>
+Свободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>
+Стоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>
+Дневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>
+Общий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>
+
+💰 <b>Деньги:</b>
+${moneyLines}
+
+${positionBlock}
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
     } catch (err: any) {
       logger.warn(`Real portfolio fallback: ${err.message}`);
     }
   }
-  const fallbackNotice = config.bcsApi.enabled ? '⚠️ BCS API временно недоступен. Показываю локальные данные.\n\n' : '';
+  const fallbackNotice = config.bcsApi.enabled ? '⚠️ BCS API временно недоступен\nПоказываю локальные данные.\n\n' : '';
   const snapshot = getLatestBcsPortfolioSnapshot();
   const positions = getBcsPositions();
   if (snapshot) {
@@ -445,6 +532,23 @@ async function handleDebugPortfolio(chatIdValue: string, telegramId: string): Pr
   }
 }
 
+
+function formatBcsPortfolioPositions(positions: Array<{ ticker: string; name?: string; quantity: number; currentPrice: number; currentValueRub?: number; dailyPL?: number; dailyPercentPL?: number; unrealizedPL?: number; unrealizedPercentPL?: number; unrealizedPnl: number }>, hasMoney: boolean): string {
+  if (!positions.length) return hasMoney ? 'Позиции: нет бумаг, только денежный остаток.' : 'Позиции:\nнет данных';
+  return `Позиции:\n${positions.map(position => [
+    `• ${position.ticker}${position.name ? ` — ${position.name}` : ''}`,
+    `  Кол-во: ${formatNumber(position.quantity)}`,
+    `  Цена: ${formatRub(position.currentPrice)}`,
+    `  Стоимость: ${formatRub(position.currentValueRub ?? position.currentPrice * position.quantity)}`,
+    `  День: ${formatRub(position.dailyPL ?? 0)} / ${formatPercent(position.dailyPercentPL ?? 0)}`,
+    `  P&L: ${formatRub(position.unrealizedPL ?? position.unrealizedPnl)} / ${formatPercent(position.unrealizedPercentPL ?? 0)}`,
+  ].join('\n')).join('\n')}`;
+}
+
+function formatPercent(value: number): string {
+  return `${formatNumber(value)}%`;
+}
+
 function formatCashBalances(cash: Array<{ currency: string; available: number; blocked: number; total: number }>, includeMajorCurrencies = false): string {
   if (!cash.length && !includeMajorCurrencies) return 'нет данных';
   const byCurrency = new Map(cash.map(item => [item.currency, item]));
@@ -458,6 +562,25 @@ function formatCashBalances(cash: Array<{ currency: string; available: number; b
 
 function formatNumber(value: number): string {
   return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function buildSectionInDevelopment(): string {
+  return '🚧 Раздел в разработке';
+}
+
+function buildHelp(): string {
+  return `ℹ️ <b>Помощь</b>
+
+<b>Основные разделы</b>
+• 📊 <code>/portfolio</code> — портфель BCS
+• 💰 <code>/limits</code> — денежные остатки
+• 🔎 <code>/debug_limits</code> — debug остатков
+• 🔎 <code>/debug_portfolio</code> — debug портфеля
+• 🧭 <code>/menu</code> — главное меню
+
+🔒 Автоторговля отключена. Бот работает в режиме безопасного мониторинга.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
 }
 
 function buildPaperModeStatus(): string {
@@ -552,6 +675,23 @@ function buildReport(telegramId: string, period: 'day' | 'month'): string {
   const worst = [...closed].sort((a, b) => a.pnl - b.pnl).slice(0, 3);
   const bySymbol = getWinrateBySymbol(telegramId);
   return `${period === 'day' ? '📅 <b>Отчет за день</b>' : '📆 <b>Отчет за месяц</b>'}\n\nОткрытые позиции: <b>${open.length}</b>\nЗакрытые сделки: <b>${closed.length}</b>\nP&L: <b>${formatRub(pnl)}</b>\nКомиссии: <b>${commissions.toFixed(2)} ₽</b>\nWinrate: <b>${winrate.toFixed(1)}%</b>\n${period === 'month' ? `Средний RR: <b>1:${avgRr.toFixed(2)}</b>\nЛучшие инструменты: ${bySymbol.slice(0, 3).map(x => x.symbol).join(', ') || 'нет данных'}\nХудшие инструменты: ${bySymbol.slice(-3).map(x => x.symbol).join(', ') || 'нет данных'}\nЧастые ошибки: высокий риск, слабый RR, вход без плана.` : ''}\n\nЛучшие сделки:\n${best.length ? best.map(t => `• #${t.id} ${t.ticker}: ${formatRub(t.pnl)}`).join('\n') : 'нет данных'}\n\nХудшие сделки:\n${worst.length ? worst.map(t => `• #${t.id} ${t.ticker}: ${formatRub(t.pnl)}`).join('\n') : 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+}
+
+
+function buildSettingsScreen(telegramId: string): string {
+  const s = getUserSettings(telegramId);
+  const fee = getBrokerFee(s.userId);
+  return `⚙️ <b>Настройки</b>
+━━━━━━━━━━━━━━
+
+Депозит: <b>${s.depositRub.toFixed(2)} ₽</b>
+Риск на сделку: <b>${s.riskPerTrade.toFixed(2)}%</b>
+Макс. дневная просадка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
+Макс. открытых позиций: <b>${s.maxOpenPositions}</b>
+
+Тариф комиссии: <b>${fee.tariffName}</b>
+Акции: <b>${fee.stockFeePercent}%</b>
+Инструменты: <code>${getInstruments().map(i => i.ticker).join(', ')}</code>`;
 }
 
 async function sendSettings(chat: string, telegramId: string): Promise<void> {
