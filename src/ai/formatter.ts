@@ -1,14 +1,28 @@
 import type { AiDealContext, AiMarketContext, AiPortfolioContext, AiRiskContext } from './types';
 
+const LEGACY_TEST_CAPITAL = 300000;
+
+function plannedCapital(value: number): number | null {
+  return value > 0 && value !== LEGACY_TEST_CAPITAL ? value : null;
+}
+
+function plannedCapitalText(value: number): string {
+  const planned = plannedCapital(value);
+  return planned === null ? 'Плановый капитал не задан' : formatRub(planned);
+}
+
 export function formatPortfolioFallback(ctx: AiPortfolioContext): string {
   const cashRub = ctx.cash.reduce((sum, item) => sum + (item.currentValueRub ?? (item.currency === 'RUB' ? item.total : 0)), 0) || ctx.freeCash;
   const cashShare = ctx.balance > 0 ? (cashRub / ctx.balance) * 100 : 0;
   const positionsText = ctx.positions.length
     ? ctx.positions.slice(0, 6).map(position => `• <b>${position.ticker}</b>: ${formatRub(position.currentValueRub ?? position.currentPrice * position.quantity)} / P&L ${formatRub(position.unrealizedPL ?? position.unrealizedPnl)}`).join('\n')
     : `В портфеле сейчас только денежный остаток. Анализирую готовность к торговле.`;
-  const depositGap = ctx.settings.depositRub > 0 && cashRub < ctx.settings.depositRub * 0.1
-    ? 'Фактический остаток сильно ниже планового депозита. Торговать реальным объемом сейчас нельзя.'
-    : 'Фактический остаток сопоставим с настройками, но размер риска нужно проверять перед каждой сделкой.';
+  const planned = plannedCapital(ctx.settings.depositRub);
+  const capitalNote = cashRub > 0 && cashRub < 1000
+    ? 'Фактический остаток небольшой. Реальную торговлю лучше не начинать. Сначала проверьте аналитику, рынок и журнал сделок.'
+    : planned === null
+      ? 'Плановый капитал не задан. Оценка строится по фактическим данным БКС.'
+      : 'Плановый капитал задан. Размер риска нужно сверять с фактическим остатком и стоимостью портфеля.';
   return `🧠 <b>AI-разбор портфеля</b>
 
 <b>Состояние:</b>
@@ -20,12 +34,12 @@ ${ctx.source.startsWith('⚠️') ? `${ctx.source}\n` : ''}${positionsText}
 Общий P&L: <b>${formatRub(ctx.totalPnl)}</b>
 
 <b>Риск:</b>
-Депозит в настройках: <b>${formatRub(ctx.settings.depositRub)}</b>
+Плановый капитал: <b>${plannedCapitalText(ctx.settings.depositRub)}</b>
 Риск на сделку: <b>${ctx.settings.riskPerTrade.toFixed(2)}%</b>
-${depositGap}
+${capitalNote}
 
 <b>Вывод:</b>
-Режим: <b>наблюдение / paper mode</b>.
+Режим: <b>наблюдение / тестовый режим</b>.
 Лучший следующий шаг: тестировать scanner, дневник сделок и условия входа без реальных ордеров.
 
 ⚠️ <i>Это не инвестиционная рекомендация.</i>`;
@@ -56,26 +70,30 @@ ${ctx.losers.slice(0, 3).map(item => `• ${item.ticker}: ${formatChange(item.ch
 }
 
 export function formatRiskFallback(ctx: AiRiskContext): string {
-  const maxRiskRub = ctx.settings.depositRub * (ctx.settings.riskPerTrade / 100);
-  const exposureShare = ctx.settings.depositRub > 0 ? (ctx.exposureRub / ctx.settings.depositRub) * 100 : 0;
+  const planned = plannedCapital(ctx.settings.depositRub);
+  const currentCapital = ctx.cashRub + ctx.exposureRub;
+  const riskBase = planned ?? currentCapital;
+  const maxRiskRub = riskBase * (ctx.settings.riskPerTrade / 100);
+  const exposureShare = currentCapital > 0 ? (ctx.exposureRub / currentCapital) * 100 : 0;
   return `🧠 <b>AI-риск</b>
 
 <b>Настройки:</b>
-Депозит: <b>${formatRub(ctx.settings.depositRub)}</b>
-Риск на сделку: <b>${ctx.settings.riskPerTrade.toFixed(2)}%</b> ≈ <b>${formatRub(maxRiskRub)}</b>
-Дневная просадка: <b>${ctx.settings.maxDailyLoss.toFixed(2)}%</b>
-Макс. позиций: <b>${ctx.settings.maxOpenPositions}</b>
+Плановый капитал: <b>${plannedCapitalText(ctx.settings.depositRub)}</b>
+Текущий капитал: <b>${formatRub(currentCapital)}</b>
+Риск на сделку: <b>${ctx.settings.riskPerTrade.toFixed(2)}%</b>${riskBase > 0 ? ` ≈ <b>${formatRub(maxRiskRub)}</b>` : ''}
+Дневной лимит убытка: <b>${ctx.settings.maxDailyLoss.toFixed(2)}%</b>
+Максимум позиций: <b>${ctx.settings.maxOpenPositions}</b>
 
-<b>Текущий exposure:</b>
+<b>Текущий объем в позициях:</b>
 Позиции: <b>${ctx.positionsCount}</b>
-Exposure: <b>${formatRub(ctx.exposureRub)}</b> / <b>${exposureShare.toFixed(1)}%</b> от депозита
+Объем в позициях: <b>${formatRub(ctx.exposureRub)}</b> / <b>${exposureShare.toFixed(1)}%</b> от текущего капитала
 Кэш: <b>${formatRub(ctx.cashRub)}</b>
 
-<b>Execution:</b>
-Paper mode: <b>${ctx.paperMode ? 'да' : 'нет'}</b>
-Execution mode: <b>${ctx.executionMode}</b>
-Read only: <b>${ctx.readOnly ? 'true' : 'false'}</b>
-Order execution: <b>${ctx.orderExecution ? 'true' : 'false'}</b>
+<b>Безопасность:</b>
+Тестовый режим: <b>${ctx.paperMode ? 'включен' : 'выключен'}</b>
+Режим заявок: <b>${ctx.executionMode === 'manual_confirm' ? 'Ручное подтверждение' : ctx.executionMode}</b>
+Только просмотр: <b>${ctx.readOnly ? 'да' : 'нет'}</b>
+Заявки: <b>${ctx.orderExecution ? 'включены' : 'отключены'}</b>
 
 <b>Вывод:</b>
 Фокус — контроль размера позиции, стоп до входа и лимит дневного риска. При сомнительном рынке лучше ждать подтверждения.
@@ -85,7 +103,8 @@ Order execution: <b>${ctx.orderExecution ? 'true' : 'false'}</b>
 
 export function formatDealFallback(ctx: AiDealContext): string {
   const change = ctx.instrument?.changePercent ?? 0;
-  const riskRub = ctx.settings.depositRub * (ctx.settings.riskPerTrade / 100);
+  const planned = plannedCapital(ctx.settings.depositRub);
+  const riskRub = (planned ?? 0) * (ctx.settings.riskPerTrade / 100);
   const directionText = ctx.direction === 'long' ? 'long-сценарий' : 'short-сценарий';
   const context = Math.abs(change) >= 1.5 ? 'есть импульс, но нужно проверить объем и уровень' : 'импульс слабый, лучше ждать подтверждения';
   return `🧠 <b>AI-разбор сделки</b>
@@ -100,7 +119,7 @@ export function formatDealFallback(ctx: AiDealContext): string {
 ${context}.
 
 <b>Риск:</b>
-Лимит риска по настройкам: <b>${formatRub(riskRub)}</b> на сценарий.
+Лимит риска: <b>${planned ? formatRub(riskRub) : 'Плановый капитал не задан'}</b> на сценарий.
 Стоп нужно ставить за технический уровень, а размер позиции считать от расстояния до стопа.
 
 <b>Что проверить:</b>
@@ -110,7 +129,7 @@ ${context}.
 • отсутствие входа на эмоциях
 
 <b>Вывод:</b>
-Без подтверждения лучше ждать. Сценарий можно вести в paper mode и дневнике сделок.
+Без подтверждения лучше ждать. Сценарий можно вести в тестовом режиме и дневнике сделок.
 
 ⚠️ <i>Это не инвестиционная рекомендация.</i>`;
 }

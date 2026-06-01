@@ -131,12 +131,13 @@ async function openMainMenu(chatIdValue: string): Promise<void> {
 }
 
 function buildWelcomeScreen(): string {
-  return `🤖 <b>BCS Assistant Bot</b>
+  logger.info('ux_terms_normalized');
+  return `🤖 <b>BCS Assistant</b>
 
 ━━━━━━━━━━━━━━
-✅ <b>Подключение к BCS API активно.</b>
-🔒 <b>Автоторговля отключена.</b>
-🛡️ <b>Режим:</b> безопасный мониторинг.
+Режим: <b>Только просмотр</b>
+Заявки: <b>отключены</b>
+Автоторговля: <b>отключена</b>
 ━━━━━━━━━━━━━━
 
 Выберите раздел:`;
@@ -222,7 +223,7 @@ async function buildMenuScreenText(command: string, telegramId: string): Promise
   if (command === '/submenu_debug') return buildSubmenuScreen('🧪 <b>Debug</b>', 'Диагностика raw-ответов BCS API. Раздел скрыт из главного меню.');
   if (command === '/submenu_market') return buildSubmenuScreen('📈 <b>Рынок</b>', 'MOEX-обзор, сканер и лидерборды рынка.');
   if (command === '/submenu_ai') return buildSubmenuScreen('🧠 <b>AI Анализ</b>', 'AI-разборы портфеля, сделок, риска и рынка.');
-  if (command === '/submenu_risk' || command === '/risk_menu') return buildSubmenuScreen('⚠️ <b>Риск</b>', 'Статусы risk/paper/execution/emergency stop и риск-настройки.');
+  if (command === '/submenu_risk' || command === '/risk_menu') return buildSubmenuScreen('⚠️ <b>Риск</b>', 'Статус риска, тестовый режим, режим заявок, аварийная остановка и риск-настройки.');
   if (command === '/submenu_reports') return buildSubmenuScreen('📋 <b>Отчеты</b>', 'Дневник сделок, дневные/месячные отчеты, комиссии и экспорт.');
   if (command === '/submenu_settings' || command === '/settings_menu' || command === '/settings') return buildSettingsScreen(telegramId);
   if (command === '/portfolio' || command === '/real_portfolio') return buildMenuPortfolioScreen(telegramId);
@@ -289,9 +290,9 @@ function buildAiExceptionFallback(command: string, telegramId: string): string {
   if (command === '/ai_portfolio') return buildAiPortfolioLocalFallback(telegramId);
   if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
   if (command === '/ai_market' || command === '/ai_market_summary' || command === '/ai_analysis') return buildAiMarketLocalFallback();
-  return buildUiScreen('🧠 <b>AI-анализ</b>', 'Локальный rule-based fallback', `⚠️ AI-анализ временно недоступен. Показываю базовую оценку.
+  return buildUiScreen('🧠 <b>AI-анализ</b>', 'Локальный анализ по правилам', `⚠️ AI-анализ временно недоступен. Показываю базовую оценку.
 
-Сценарий: режим наблюдения / paper mode.
+Сценарий: режим наблюдения / тестовый режим.
 Риск: не открывать реальные сделки без плана, стопа и подтверждения условий входа.
 Что проверить: рыночный фон, объем, RR и дневной лимит риска.
 
@@ -753,18 +754,27 @@ function buildAiRiskLocalFallback(telegramId: string, warning = false): string {
   const settings = getUserSettings(telegramId);
   const positions = getBcsPositions();
   const exposureRub = positions.reduce((sum, position) => sum + Number(position.currentPrice ?? 0) * Number(position.quantity ?? 0), 0);
-  const exposureShare = settings.depositRub > 0 ? (exposureRub / settings.depositRub) * 100 : 0;
-  const maxRiskRub = settings.depositRub * (settings.riskPerTrade / 100);
-  return buildUiScreen('🧠 <b>AI-риск</b>', 'Локальный rule-based fallback', `${warning ? '⚠️ AI-анализ временно недоступен. Показываю базовую оценку.\n\n' : ''}Депозит: <b>${formatNumber(settings.depositRub)} ₽</b>
-Риск на сделку: <b>${settings.riskPerTrade.toFixed(2)}%</b> ≈ <b>${formatNumber(maxRiskRub)} ₽</b>
-Дневная просадка: <b>${settings.maxDailyLoss.toFixed(2)}%</b>
-Макс. позиций: <b>${settings.maxOpenPositions}</b>
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  const actualCash = Number(snapshot?.freeCash ?? 0);
+  const currentCapital = actualCash + exposureRub;
+  const planned = plannedCapitalValue(settings.depositRub);
+  const riskBase = planned ?? currentCapital;
+  const exposureShare = currentCapital > 0 ? (exposureRub / currentCapital) * 100 : 0;
+  const maxRiskRub = riskBase * (settings.riskPerTrade / 100);
+  logger.info('ai_risk_uses_actual_balance');
+  return buildUiScreen('🧠 <b>AI-риск</b>', 'Локальный анализ по правилам', `${warning ? '⚠️ AI-анализ временно недоступен. Показываю базовую оценку.\n\n' : ''}Плановый капитал: <b>${formatPlannedCapital(settings.depositRub)}</b>
+Фактический остаток: <b>${formatNumber(actualCash)} ₽</b>
+Текущий капитал: <b>${formatNumber(currentCapital)} ₽</b>
+Риск на сделку: <b>${settings.riskPerTrade.toFixed(2)}%</b>${riskBase > 0 ? ` ≈ <b>${formatNumber(maxRiskRub)} ₽</b>` : ''}
+Дневной лимит убытка: <b>${settings.maxDailyLoss.toFixed(2)}%</b>
+Максимум позиций: <b>${settings.maxOpenPositions}</b>
 
-Exposure: <b>${formatNumber(exposureRub)} ₽</b> / <b>${exposureShare.toFixed(1)}%</b>
-Execution mode: <b>${config.execution.mode}</b>
-Read only: <b>${config.readOnlyMode ? 'true' : 'false'}</b>
+Объем в позициях: <b>${formatNumber(exposureRub)} ₽</b> / <b>${exposureShare.toFixed(1)}%</b>
+Режим заявок: <b>${executionModeRu(config.execution.mode)}</b>
+Только просмотр: <b>${config.readOnlyMode ? 'да' : 'нет'}</b>
+Заявки: <b>${config.allowOrderExecution && !config.readOnlyMode ? 'включены' : 'отключены'}</b>
 
-Сценарий: контролировать размер позиции и ждать подтверждения условий входа.
+${actualCash > 0 && actualCash < 1000 ? 'Фактический остаток небольшой. Реальную торговлю лучше не начинать. Сначала проверьте аналитику, рынок и журнал сделок.' : 'Сценарий: контролировать размер позиции и ждать подтверждения условий входа.'}
 
 ⚠️ <i>Это не инвестиционная рекомендация.</i>`, new Date().toISOString(), false);
 }
@@ -973,6 +983,24 @@ function formatNumber(value: number): string {
   return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+
+function plannedCapitalValue(value: number): number | null {
+  return value > 0 && value !== 300000 ? value : null;
+}
+
+function formatPlannedCapital(value: number): string {
+  const planned = plannedCapitalValue(value);
+  return planned === null ? 'Плановый капитал не задан' : `${formatNumber(planned)} ₽`;
+}
+
+function executionModeRu(mode: string): string {
+  if (mode === 'manual_confirm') return 'Ручное подтверждение';
+  if (mode === 'paper') return 'Тестовый режим';
+  if (mode === 'disabled') return 'Отключен';
+  return mode;
+}
+
+
 function buildUiScreen(title: string, source: string, body: string, updatedAt = new Date().toISOString(), showDisclaimer = true): string {
   return `${title}
 ━━━━━━━━━━━━━━
@@ -1006,10 +1034,10 @@ function buildSettingsActionScreen(command: string, telegramId: string): string 
     '/set_tariff': 'set_tariff',
   };
   const labels: Record<string, string> = {
-    '/set_deposit': '💵 <b>Депозит</b>',
+    '/set_deposit': '💵 <b>Плановый капитал</b>',
     '/set_risk': '📉 <b>Риск %</b>',
-    '/set_daily_loss': '📉 <b>Дневная просадка</b>',
-    '/set_max_positions': '🔢 <b>Макс. позиций</b>',
+    '/set_daily_loss': '📉 <b>Дневной лимит убытка</b>',
+    '/set_max_positions': '🔢 <b>Максимум позиций</b>',
     '/set_tariff': '💸 <b>Тариф комиссии</b>',
   };
   const mode = modeMap[command];
@@ -1029,32 +1057,45 @@ function buildHelp(): string {
 • 🔎 <code>/debug_portfolio</code> — debug портфеля
 • 🧭 <code>/menu</code> — главное меню
 
-🔒 Автоторговля отключена. Бот работает в режиме безопасного мониторинга.
+🔒 Режим: только просмотр. Заявки и автоторговля отключены.
 
 ⚠️ <i>Это не инвестиционная рекомендация.</i>`;
 }
 
 function buildPaperModeStatus(): string {
-  const body = `Execution mode: <b>${config.execution.mode}</b>\nPaper active: <b>${config.execution.mode === 'paper' ? '✅ yes' : '❌ no'}</b>\nPaper engine учитывает LIMIT price, spread, slippage и комиссии.`;
-  return buildUiScreen('🤖 <b>Paper mode</b>', 'Execution config', body, new Date().toISOString(), false);
+  const body = `Тестовый режим: <b>${config.execution.mode === 'paper' ? 'включен' : 'выключен'}</b>
+Сейчас реальные заявки не отправляются. Можно проверять аналитику, рынок и журнал сделок без риска.`;
+  return buildUiScreen('🧪 <b>Тестовый режим</b>', 'Настройки безопасности', body, new Date().toISOString(), false);
 }
 
 function buildExecutionStatus(): string {
   const emergency = getEmergencyStopStatus();
-  const body = `Execution: <b>${config.execution.mode}</b>\nOrder execution: <b>${config.allowOrderExecution ? 'ENABLED' : 'DISABLED'}</b>\nRead only: <b>${config.readOnlyMode ? 'ENABLED' : 'DISABLED'}</b>\nEmergency stop: <b>${emergency.stopped ? 'ON' : 'OFF'}</b>\nAllowed symbols: <code>${config.execution.allowedSymbols.join(', ')}</code>\n\nMarket orders are disabled. Only LIMIT orders can pass validation.`;
-  return buildUiScreen('⚡ <b>Execution status</b>', 'Execution config', body, new Date().toISOString(), false);
+  const body = `Режим заявок: <b>${executionModeRu(config.execution.mode)}</b>
+Заявки: <b>${config.allowOrderExecution && !config.readOnlyMode ? 'включены' : 'отключены'}</b>
+Только просмотр: <b>${config.readOnlyMode ? 'да' : 'нет'}</b>
+Аварийная остановка: <b>${emergency.stopped ? 'включена' : 'выключена'}</b>
+Инструменты: <code>${config.execution.allowedSymbols.join(', ')}</code>
+
+Рыночные заявки отключены. Лимитные заявки требуют ручного подтверждения.`;
+  return buildUiScreen('⚡ <b>Режим заявок</b>', 'Настройки безопасности', body, new Date().toISOString(), false);
 }
 
 function buildRiskStatus(telegramId: string): string {
   const open = getOpenTrades(telegramId).length;
-  const body = `MAX_POSITION_PERCENT: <b>${config.execution.maxPositionPercent}%</b>\nMAX_DAILY_LOSS_PERCENT: <b>${config.execution.maxDailyLossPercent}%</b>\nMAX_OPEN_POSITIONS: <b>${config.execution.maxOpenPositions}</b>\nOpen local positions: <b>${open}</b>\nRR minimum: <b>1.5</b>`;
-  return buildUiScreen('⚠️ <b>Risk status</b>', 'Execution config + локальная база', body, new Date().toISOString(), false);
+  const body = `Лимит позиции %: <b>${config.execution.maxPositionPercent}%</b>\nДневной лимит убытка %: <b>${config.execution.maxDailyLossPercent}%</b>\nМаксимум позиций: <b>${config.execution.maxOpenPositions}</b>\nОткрытые локальные позиции: <b>${open}</b>\nМинимальный RR: <b>1.5</b>`;
+  return buildUiScreen('⚠️ <b>Статус риска</b>', 'Настройки риска + локальная база', body, new Date().toISOString(), false);
 }
 
 function buildEmergencyStopStatus(): string {
   const status = getEmergencyStopStatus();
-  const body = `Enabled: <b>${status.enabled ? 'YES' : 'NO'}</b>\nStatus: <b>${status.stopped ? 'ON' : 'OFF'}</b>\nReason: <b>${status.reason || '—'}</b>\nAPI errors: <b>${status.apiErrors}</b>\nRejects: <b>${status.rejects}</b>\n\nAlert text: 🚨 Trading stopped by emergency system`;
-  return buildUiScreen('🚨 <b>Emergency stop</b>', 'Execution safety', body, new Date().toISOString(), false);
+  const body = `Контроль безопасности: <b>${status.enabled ? 'включен' : 'выключен'}</b>
+Аварийная остановка: <b>${status.stopped ? 'активна' : 'не активна'}</b>
+Причина: <b>${status.reason || '—'}</b>
+Ошибки API: <b>${status.apiErrors}</b>
+Отклонения: <b>${status.rejects}</b>
+
+Сообщение: 🚨 Торговля остановлена системой безопасности`;
+  return buildUiScreen('🚨 <b>Аварийная остановка</b>', 'Безопасность заявок', body, new Date().toISOString(), false);
 }
 
 
@@ -1073,15 +1114,15 @@ function buildApiStatus(): string {
   const snapshot = getLatestBcsPortfolioSnapshot();
   const lastSync = status.lastSyncAt ?? snapshot?.syncedAt ?? 'нет данных';
   const lastPing = status.lastPingAt ?? status.lastCheckedAt ?? 'нет данных';
-  const body = `API enabled: <b>${config.bcsApi.enabled ? 'true' : 'false'}</b>
-Token: <b>${config.bcsApi.token ? 'present' : 'missing'}</b>
-Account: <code>${maskAccountId(config.bcsApi.accountId)}</code>
-Read only: <b>${config.readOnlyMode ? 'enabled' : 'disabled'}</b>
-Order execution: <b>${config.allowOrderExecution && !config.readOnlyMode ? 'enabled' : 'disabled'}</b>
-Execution mode: <b>${config.execution.mode}</b>
-Last ping: <b>${lastPing}</b>
-Last sync: <b>${lastSync}</b>
-Last error: <code>${status.lastError ?? '—'}</code>
+  const body = `BCS API: <b>${config.bcsApi.enabled ? 'включен' : 'выключен'}</b>
+Токен: <b>${config.bcsApi.token ? 'задан' : 'не задан'}</b>
+Счет: <code>${maskAccountId(config.bcsApi.accountId)}</code>
+Только просмотр: <b>${config.readOnlyMode ? 'да' : 'нет'}</b>
+Заявки: <b>${config.allowOrderExecution && !config.readOnlyMode ? 'включены' : 'отключены'}</b>
+Режим заявок: <b>${executionModeRu(config.execution.mode)}</b>
+Последняя проверка: <b>${lastPing}</b>
+Последняя синхронизация: <b>${lastSync}</b>
+Последняя ошибка: <code>${status.lastError ?? '—'}</code>
 
 Токен не выводится и не логируется.`;
   return buildUiScreen('🔌 <b>Статус BCS API</b>', 'BCS Assistant Bot', body, new Date().toISOString(), false);
@@ -1093,15 +1134,15 @@ function buildPortfolio(telegramId: string): string {
   const closed = getLastNTrades(200, telegramId);
   const pnl = closed.reduce((sum, t) => sum + t.pnl, 0);
   const commissions = closed.reduce((sum, t) => sum + t.commission, 0);
-  return `📊 <b>Портфель</b>\n\nДепозит: <b>${settings.depositRub.toFixed(2)} ₽</b>\nОткрытые позиции: <b>${positions.length}</b>\nP&L закрытых сделок: <b>${formatRub(pnl)}</b>\nКомиссии: <b>${commissions.toFixed(2)} ₽</b>\n\n${positions.length ? positions.map(p => `• ${p.ticker} ${p.direction} qty ${p.quantity} @ ${p.avgEntryPrice}`).join('\n') : 'Открытых позиций нет.'}`;
+  return `📊 <b>Портфель</b>\n\nПлановый капитал: <b>${formatPlannedCapital(settings.depositRub)}</b>\nОткрытые позиции: <b>${positions.length}</b>\nP&L закрытых сделок: <b>${formatRub(pnl)}</b>\nКомиссии: <b>${commissions.toFixed(2)} ₽</b>\n\n${positions.length ? positions.map(p => `• ${p.ticker} ${p.direction} qty ${p.quantity} @ ${p.avgEntryPrice}`).join('\n') : 'Открытых позиций нет.'}`;
 }
 
 function buildRiskManagement(telegramId: string): string {
   const s = getUserSettings(telegramId);
-  const body = `Депозит: <b>${s.depositRub.toFixed(2)} ₽</b>
+  const body = `Плановый капитал: <b>${formatPlannedCapital(s.depositRub)}</b>
 Риск на сделку: <b>${s.riskPerTrade.toFixed(2)}%</b>
-Макс. дневная просадка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
-Макс. открытых позиций: <b>${s.maxOpenPositions}</b>
+Дневной лимит убытка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
+Максимум позиций: <b>${s.maxOpenPositions}</b>
 
 Если риска нет, стопа нет или RR ниже 1.5 — сделку лучше не сохранять.`;
   return buildUiScreen('⚠️ <b>Риск-менеджмент</b>', 'Локальные настройки', body);
@@ -1152,12 +1193,12 @@ ${worst.length ? worst.map(t => `• #${t.id} ${t.ticker}: ${formatRub(t.pnl)}`)
 function buildSettingsScreen(telegramId: string): string {
   const s = getUserSettings(telegramId);
   const fee = getBrokerFee(s.userId);
-  const body = `Депозит: <b>${s.depositRub.toFixed(2)} ₽</b>
+  const body = `Плановый капитал: <b>${formatPlannedCapital(s.depositRub)}</b>
 Риск на сделку: <b>${s.riskPerTrade.toFixed(2)}%</b>
-Макс. дневная просадка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
-Макс. открытых позиций: <b>${s.maxOpenPositions}</b>
+Дневной лимит убытка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
+Максимум позиций: <b>${s.maxOpenPositions}</b>
 
-Тариф комиссии: <b>${fee.tariffName}</b>
+Комиссии: <b>${fee.tariffName}</b>
 Акции: <b>${fee.stockFeePercent}%</b>
 Инструменты: <code>${getInstruments().map(i => i.ticker).join(', ')}</code>`;
   return buildUiScreen('⚙️ <b>Настройки</b>', 'Локальные настройки', body, new Date().toISOString(), false);
@@ -1166,9 +1207,9 @@ function buildSettingsScreen(telegramId: string): string {
 async function sendSettings(chat: string, telegramId: string): Promise<void> {
   const s = getUserSettings(telegramId);
   const fee = getBrokerFee(s.userId);
-  await bot.sendMessage(chat, `⚙️ <b>Настройки</b>\n\nДепозит: ${s.depositRub.toFixed(2)} ₽\nРиск на сделку: ${s.riskPerTrade.toFixed(2)}%\nМакс. дневная просадка: ${s.maxDailyLoss.toFixed(2)}%\nМакс. открытых позиций: ${s.maxOpenPositions}\nТариф комиссии: ${fee.tariffName}, акции ${fee.stockFeePercent}%\nИнструменты: ${getInstruments().map(i => i.ticker).join(', ')}`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
-    [{ text: 'Депозит', callback_data: 'settings:deposit' }, { text: 'Риск %', callback_data: 'settings:risk' }],
-    [{ text: 'Дневная просадка', callback_data: 'settings:daily_loss' }, { text: 'Макс. позиций', callback_data: 'settings:max_positions' }],
+  await bot.sendMessage(chat, `⚙️ <b>Настройки</b>\n\nПлановый капитал: ${formatPlannedCapital(s.depositRub)}\nРиск на сделку: ${s.riskPerTrade.toFixed(2)}%\nДневной лимит убытка: ${s.maxDailyLoss.toFixed(2)}%\nМаксимум позиций: ${s.maxOpenPositions}\nКомиссии: ${fee.tariffName}, акции ${fee.stockFeePercent}%\nИнструменты: ${getInstruments().map(i => i.ticker).join(', ')}`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+    [{ text: 'Плановый капитал', callback_data: 'settings:deposit' }, { text: 'Риск %', callback_data: 'settings:risk' }],
+    [{ text: 'Дневной лимит', callback_data: 'settings:daily_loss' }, { text: 'Максимум позиций', callback_data: 'settings:max_positions' }],
     [{ text: 'Тариф комиссии (акции %)', callback_data: 'settings:tariff' }],
   ] } });
 }

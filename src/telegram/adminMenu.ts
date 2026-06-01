@@ -115,9 +115,9 @@ export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions
   if (['/ai_analysis', '/ai_portfolio', '/ai_deal', '/ai_trade', '/ai_risk', '/ai_market', '/ai_market_summary'].includes(command)) return withBackHome('ai', [[{ text: '🔄 Обновить', callback_data: command === '/ai_market' || command === '/ai_market_summary' ? 'ai_market' : command === '/ai_risk' ? 'ai_risk' : command === '/ai_deal' || command === '/ai_trade' ? 'ai_deal' : 'ai_portfolio' }]]);
 
   if (command === '/submenu_risk') return withHome([
-    [{ text: '⚠️ Risk status', callback_data: 'risk_status' }, { text: '🤖 Paper mode', callback_data: 'paper_mode' }],
-    [{ text: '⚡ Execution mode', callback_data: 'execution_mode' }, { text: '🛡 Risk settings', callback_data: 'risk_settings' }],
-    [{ text: '🚨 Emergency stop', callback_data: 'emergency_stop' }],
+    [{ text: '⚠️ Статус риска', callback_data: 'risk_status' }, { text: '🧪 Тестовый режим', callback_data: 'paper_mode' }],
+    [{ text: '⚡ Режим заявок', callback_data: 'execution_mode' }, { text: '🛡 Настройки риска', callback_data: 'risk_settings' }],
+    [{ text: '🚨 Аварийная остановка', callback_data: 'emergency_stop' }],
   ]);
   if (['/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/risk'].includes(command)) return getBackHomeKeyboard('risk');
 
@@ -129,8 +129,8 @@ export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions
   if (['/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/export'].includes(command)) return getBackHomeKeyboard('reports');
 
   if (command === '/submenu_settings') return withHome([
-    [{ text: '💵 Депозит', callback_data: 'set_deposit' }, { text: '📉 Риск %', callback_data: 'set_risk' }],
-    [{ text: '📉 Дневная просадка', callback_data: 'set_daily_loss' }, { text: '🔢 Макс. позиций', callback_data: 'set_max_positions' }],
+    [{ text: '💵 Плановый капитал', callback_data: 'set_deposit' }, { text: '📉 Риск %', callback_data: 'set_risk' }],
+    [{ text: '📉 Дневной лимит', callback_data: 'set_daily_loss' }, { text: '🔢 Максимум позиций', callback_data: 'set_max_positions' }],
     [{ text: '💸 Тариф комиссии', callback_data: 'set_tariff' }, { text: '📌 Watchlist', callback_data: 'watchlist' }],
     [{ text: 'ℹ️ Помощь', callback_data: 'help' }],
   ]);

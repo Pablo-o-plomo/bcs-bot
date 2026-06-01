@@ -17,7 +17,7 @@ ${state.label}
 ${state.scannerHighlights.length ? state.scannerHighlights.map(item => `• ${item}`).join('\n') : 'активных сигналов мало'}
 
 <b>Готовность:</b>
-Если портфель состоит только из кэша, базовый режим — наблюдение, paper mode и проверка scanner-сценариев.`;
+Если портфель состоит только из кэша, базовый режим — наблюдение, тестовый режим и проверка scanner-сценариев.`;
 }
 
 export function fallbackMarketAnalysis(ctx: AiMarketContext): string {
