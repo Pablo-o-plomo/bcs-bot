@@ -19,7 +19,8 @@ import { formatMarketOverview, formatScanner, formatTopList } from '../market/fo
 import type { TopListMode } from '../market/types';
 import { reviewTrade } from '../ai/tradeReview';
 import { analyzeDeal, analyzeMarket, analyzePortfolio } from '../ai/analyzer';
-import { formatPortfolioFallback } from '../ai/formatter';
+import { fallbackMarketAnalysis, fallbackPortfolioAnalysis } from '../ai/fallback';
+import { analyzeMarketState } from '../market/state-engine';
 import {
   ensureUser,
   getBrokerFee,
@@ -285,7 +286,10 @@ function buildAiTimeoutFallback(command: string, telegramId: string): string {
 function buildAiExceptionFallback(command: string, telegramId: string): string {
   logger.info(`ai_fallback_used: exception:${command}`);
   if (command === '/ai_risk') return buildAiRiskLocalFallback(telegramId, true);
-  return buildUiScreen('⚠️ <b>AI-анализ временно недоступен</b>', 'Локальный rule-based fallback', `⚠️ AI-анализ временно недоступен. Показываю базовую оценку.
+  if (command === '/ai_portfolio') return buildAiPortfolioLocalFallback(telegramId);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  if (command === '/ai_market' || command === '/ai_market_summary' || command === '/ai_analysis') return buildAiMarketLocalFallback();
+  return buildUiScreen('🧠 <b>AI-анализ</b>', 'Локальный rule-based fallback', `⚠️ AI-анализ временно недоступен. Показываю базовую оценку.
 
 Сценарий: режим наблюдения / paper mode.
 Риск: не открывать реальные сделки без плана, стопа и подтверждения условий входа.
@@ -658,6 +662,34 @@ async function withBcsPortfolioTimeout(): Promise<Awaited<ReturnType<typeof bcsA
   }
 }
 
+
+function buildAiPortfolioLocalFallback(telegramId: string): string {
+  const settings = getUserSettings(telegramId);
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  const localPositions = getBcsPositions();
+  logger.info('ai_analysis_fallback: portfolio_local');
+  return fallbackPortfolioAnalysis({
+    balance: snapshot?.balance ?? settings.depositRub,
+    freeCash: snapshot?.freeCash ?? 0,
+    portfolioValue: snapshot?.portfolioValue ?? 0,
+    dayPnl: snapshot?.dayPnl ?? 0,
+    totalPnl: snapshot?.totalPnl ?? 0,
+    cash: [{ currency: 'RUB', available: snapshot?.freeCash ?? 0, blocked: 0, total: snapshot?.freeCash ?? 0, currentValueRub: snapshot?.freeCash ?? 0 }],
+    positions: localPositions.map(position => ({
+      ticker: position.ticker,
+      name: position.name,
+      quantity: position.quantity,
+      averagePrice: position.averagePrice,
+      currentPrice: position.currentPrice,
+      currentValueRub: position.currentPrice * position.quantity,
+      unrealizedPnl: position.unrealizedPnl,
+      portfolioSharePercent: position.portfolioSharePercent,
+    })),
+    settings,
+    source: config.bcsApi.enabled ? '⚠️ BCS API долго отвечает. Показываю локальный анализ.' : 'Локальный snapshot',
+  });
+}
+
 async function buildAiPortfolioAnalysis(telegramId: string): Promise<string> {
   const settings = getUserSettings(telegramId);
   if (config.bcsApi.enabled) {
@@ -680,38 +712,32 @@ async function buildAiPortfolioAnalysis(telegramId: string): Promise<string> {
       logger.warn(`ai_analysis_failed: portfolio_bcs: ${err?.message ?? err}`);
     }
   }
-  const snapshot = getLatestBcsPortfolioSnapshot();
-  const localPositions = getBcsPositions();
-  logger.info('ai_fallback_used: portfolio_local');
-  const context = {
-    balance: snapshot?.balance ?? settings.depositRub,
-    freeCash: snapshot?.freeCash ?? 0,
-    portfolioValue: snapshot?.portfolioValue ?? 0,
-    dayPnl: snapshot?.dayPnl ?? 0,
-    totalPnl: snapshot?.totalPnl ?? 0,
-    cash: [{ currency: 'RUB', available: snapshot?.freeCash ?? 0, blocked: 0, total: snapshot?.freeCash ?? 0, currentValueRub: snapshot?.freeCash ?? 0 }],
-    positions: localPositions.map(position => ({
-      ticker: position.ticker,
-      name: position.name,
-      quantity: position.quantity,
-      averagePrice: position.averagePrice,
-      currentPrice: position.currentPrice,
-      currentValueRub: position.currentPrice * position.quantity,
-      unrealizedPnl: position.unrealizedPnl,
-      portfolioSharePercent: position.portfolioSharePercent,
-    })),
-    settings,
-    source: config.bcsApi.enabled ? '⚠️ BCS API долго отвечает. Показываю локальный анализ.' : 'Локальный snapshot',
-  };
-  return formatPortfolioFallback(context);
+  return buildAiPortfolioLocalFallback(telegramId);
 }
 
 async function buildAiMarketAnalysis(): Promise<string> {
+  const context = await withTimeout(buildAiMarketContext(), 3500, buildAiMarketFallbackContext(), 'ai_market_data');
+  return analyzeMarket(context);
+}
+
+async function buildAiMarketContext() {
   const { snapshot, signals } = await scanMarket();
   const { instruments: gainers } = await getTopList('gainers');
   const { instruments: losers } = await getTopList('losers');
   const { instruments: volume } = await getTopList('volume');
-  return analyzeMarket({ snapshot, signals, gainers, losers, volume });
+  const context = { snapshot, signals, gainers, losers, volume };
+  return { ...context, state: analyzeMarketState(context) };
+}
+
+function buildAiMarketFallbackContext() {
+  const snapshot = { status: 'unknown' as const, instruments: [], updatedAt: new Date().toISOString(), source: 'cached/mock' as const, fallback: true };
+  const context = { snapshot, signals: [], gainers: [], losers: [], volume: [] };
+  logger.info('ai_analysis_fallback: market_state_local');
+  return { ...context, state: analyzeMarketState(context) };
+}
+
+function buildAiMarketLocalFallback(): string {
+  return fallbackMarketAnalysis(buildAiMarketFallbackContext());
 }
 
 async function buildAiRiskAnalysis(telegramId: string): Promise<string> {
@@ -757,7 +783,8 @@ async function processAiDeal(chat: string, telegramId: string, text: string): Pr
   const snapshot = await withTimeout(getMarketSnapshot(), 3000, { status: 'unknown', instruments: [], updatedAt: new Date().toISOString(), source: 'cached/mock', fallback: true }, 'ai_deal_market');
   const ticker = tickerRaw.toUpperCase();
   const instrument = snapshot.instruments.find(item => item.ticker.toUpperCase() === ticker);
-  await send(chat, await analyzeDeal({ ticker, direction, instrument, settings: getUserSettings(telegramId), marketStatus: snapshot.status }));
+  const marketContext = { snapshot, signals: [], gainers: [], losers: [], volume: [] };
+  await send(chat, await analyzeDeal({ ticker, direction, instrument, settings: getUserSettings(telegramId), marketStatus: snapshot.status, marketState: analyzeMarketState(marketContext) }));
 }
 
 async function buildMenuPortfolioScreen(telegramId: string): Promise<string> {

@@ -1,5 +1,6 @@
 import type { BcsCashBalance, BcsPosition } from '../broker/bcs/types';
 import type { MarketInstrument, MarketSnapshot, ScannerSignal } from '../market/types';
+import type { MarketStateResult } from '../market/state-engine';
 import type { UserSettings } from '../database/models';
 
 export type AiAnalysisKind = 'portfolio' | 'market' | 'risk' | 'deal';
@@ -22,6 +23,7 @@ export interface AiMarketContext {
   gainers: MarketInstrument[];
   losers: MarketInstrument[];
   volume: MarketInstrument[];
+  state?: MarketStateResult;
 }
 
 export interface AiRiskContext {
@@ -41,4 +43,5 @@ export interface AiDealContext {
   instrument?: MarketInstrument;
   settings: UserSettings;
   marketStatus: string;
+  marketState?: MarketStateResult;
 }
