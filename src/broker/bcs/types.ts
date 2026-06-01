@@ -6,6 +6,8 @@ export interface BcsApiStatus {
   orderExecutionEnabled: boolean;
   accountId?: string;
   clientId?: string;
+  baseUrl?: string;
+  lastRequestUrl?: string;
   lastError?: string;
   lastCheckedAt?: string;
   lastPingAt?: string;
