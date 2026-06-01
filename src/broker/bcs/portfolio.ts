@@ -3,6 +3,8 @@ import type { BcsPortfolio, BcsPosition } from './types';
 
 export async function getPortfolio(client: BcsApiClient): Promise<BcsPortfolio> {
   const raw = await client.request<any>('GET', '/trade-api-bff-limit/api/v1/limits');
+  // TEMP DEBUG: remove after mapping exact BCS limits fields.
+  console.log('[BCS_LIMITS_RAW]', JSON.stringify(raw, null, 2));
   return normalizeLimits(raw);
 }
 
