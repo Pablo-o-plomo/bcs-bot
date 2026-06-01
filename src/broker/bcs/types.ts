@@ -8,6 +8,7 @@ export interface BcsApiStatus {
   clientId?: string;
   lastError?: string;
   lastCheckedAt?: string;
+  lastPingAt?: string;
   lastSyncAt?: string;
 }
 

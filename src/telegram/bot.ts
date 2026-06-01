@@ -104,7 +104,10 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/diary') return send(chatIdValue, buildDiary(telegramId));
   if (command === '/daily_report') return send(chatIdValue, buildReport(telegramId, 'day'));
   if (command === '/monthly_report') return send(chatIdValue, buildReport(telegramId, 'month'));
-  if (command === '/api_status') return send(chatIdValue, buildApiStatus());
+  if (command === '/api_status') {
+    if (!isAdminAllowed(telegramId)) return send(chatIdValue, '⛔️ Раздел доступен только администратору.');
+    return send(chatIdValue, buildApiStatus());
+  }
   if (command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
   if (command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
   if (command === '/risk_status') return send(chatIdValue, buildRiskStatus(telegramId));
@@ -407,36 +410,37 @@ function buildEmergencyStopStatus(): string {
   return `🚨 <b>Emergency stop</b>\n\nEnabled: <b>${status.enabled ? 'YES' : 'NO'}</b>\nStatus: <b>${status.stopped ? 'ON' : 'OFF'}</b>\nReason: <b>${status.reason || '—'}</b>\nAPI errors: <b>${status.apiErrors}</b>\nRejects: <b>${status.rejects}</b>\n\nAlert text: 🚨 Trading stopped by emergency system`;
 }
 
+
+function isAdminAllowed(telegramId: string): boolean {
+  return !config.telegram.adminId || telegramId === config.telegram.adminId;
+}
+
+function maskAccountId(accountId: string): string {
+  if (!accountId) return 'missing';
+  if (accountId.length <= 4) return `${accountId.slice(0, 1)}***`;
+  return `${accountId.slice(0, 4)}****`;
+}
+
 function buildApiStatus(): string {
   const status = bcsApiClient.getStatus();
   const snapshot = getLatestBcsPortfolioSnapshot();
   const lastSync = status.lastSyncAt ?? snapshot?.syncedAt ?? 'нет данных';
+  const lastPing = status.lastPingAt ?? status.lastCheckedAt ?? 'нет данных';
   return `━━━━━━━━━━━━━━
 🔌 <b>BCS API STATUS</b>
 ━━━━━━━━━━━━━━
 
-API:
-<b>${status.connected ? '✅ connected' : '❌ not connected'}</b>
+API enabled: <b>${config.bcsApi.enabled ? 'true' : 'false'}</b>
+Token: <b>${config.bcsApi.token ? 'present' : 'missing'}</b>
+Account: <code>${maskAccountId(config.bcsApi.accountId)}</code>
+Read only: <b>${config.readOnlyMode ? 'enabled' : 'disabled'}</b>
+Order execution: <b>${config.allowOrderExecution && !config.readOnlyMode ? 'enabled' : 'disabled'}</b>
+Execution mode: <b>${config.execution.mode}</b>
+Last ping: <b>${lastPing}</b>
+Last sync: <b>${lastSync}</b>
+Last error: <code>${status.lastError ?? '—'}</code>
 
-Read only:
-<b>${config.readOnlyMode ? '✅ enabled' : '❌ disabled'}</b>
-
-Order execution:
-<b>${config.allowOrderExecution && !config.readOnlyMode ? '⚠️ enabled' : '❌ disabled'}</b>
-
-Account:
-<code>${config.bcsApi.accountId || 'не задан'}</code>
-
-Client ID:
-<code>${config.bcsApi.clientId}</code>
-
-Last sync:
-<b>${lastSync}</b>
-
-${status.lastError ? `Last error:
-<code>${status.lastError}</code>
-
-` : ''}━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━
 
 Токен не выводится и не логируется.`;
 }

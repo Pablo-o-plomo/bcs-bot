@@ -369,6 +369,10 @@ export function getBcsTrades(limit = 50): any[] {
   return db.prepare('SELECT * FROM bcs_trades ORDER BY tradeDateTime DESC LIMIT ?').all(limit) as any[];
 }
 
+export function getBcsTrades(limit = 50): any[] {
+  return db.prepare('SELECT * FROM bcs_trades ORDER BY tradeDateTime DESC LIMIT ?').all(limit) as any[];
+}
+
 export function recordReject(): void {}
 export function getRejectStats(): Array<{ reason: string; count: number }> { return []; }
 export function getRejectStatsBySymbol(): Array<{ symbol: string; count: number }> { return []; }

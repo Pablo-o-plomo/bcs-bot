@@ -13,6 +13,35 @@ import { syncPortfolio } from './sync/portfolioSync';
 import { syncTrades } from './sync/tradeSync';
 import { syncPositions } from './sync/positionSync';
 import { bcsApiClient } from './broker/bcs/client';
+import { sanitizeSecret } from './broker/bcs/errors';
+
+
+function maskAccountId(accountId: string): string {
+  if (!accountId) return 'missing';
+  if (accountId.length <= 4) return `${accountId.slice(0, 1)}***`;
+  return `${accountId.slice(0, 4)}****`;
+}
+
+function logBcsApiConfig(): void {
+  logger.info('🔌 BCS API config:');
+  logger.info(`   enabled: ${config.bcsApi.enabled}`);
+  logger.info(`   token: ${config.bcsApi.token ? 'present' : 'missing'}`);
+  logger.info(`   accountId: ${maskAccountId(config.bcsApi.accountId)}`);
+  logger.info(`   readOnly: ${config.readOnlyMode}`);
+  logger.info(`   orderExecution: ${config.allowOrderExecution}`);
+  logger.info(`   executionMode: ${config.execution.mode}`);
+  logger.info(`   baseUrl: ${config.bcsApi.baseUrl ? 'present' : 'missing'}`);
+}
+
+async function pingBcsApiOnStartup(): Promise<void> {
+  if (!config.bcsApi.enabled) return;
+  try {
+    await bcsApiClient.ping();
+    logger.info('✅ BCS API ping successful');
+  } catch (err: any) {
+    logger.warn(`⚠️ BCS API ping failed: ${sanitizeSecret(err?.message ?? err)}`);
+  }
+}
 
 async function bootstrap(): Promise<void> {
   fs.mkdirSync(path.join(process.cwd(), 'logs'), { recursive: true });
@@ -20,10 +49,11 @@ async function bootstrap(): Promise<void> {
   logger.info(`   Broker: ${config.broker}`);
   logger.info(`   Auto trading: ${config.autoTrading ? 'enabled (not implemented)' : 'disabled'}`);
   logger.info(`   MOEX enabled: ${config.moex.enabled}`);
-  logger.info(`   BCS API enabled: ${config.bcsApi.enabled}, readOnly=${config.readOnlyMode}, orderExecution=${config.allowOrderExecution}`);
+  logBcsApiConfig();
 
   initDb();
   await bcsApiClient.connect();
+  await pingBcsApiOnStartup();
   initTelegramBot();
 
   const app = express();

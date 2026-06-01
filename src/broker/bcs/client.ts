@@ -35,7 +35,6 @@ export class BcsApiClient {
     try {
       validateBcsTokenConfig();
       await getBcsAccessToken(true);
-      await this.ping();
       this.status = { ...this.getStatus(), connected: true, accountVerified: Boolean(config.bcsApi.accountId), lastCheckedAt: new Date().toISOString(), lastError: undefined };
       logger.info('✅ BCS API connected');
       logger.info(`${this.status.accountVerified ? '✅' : '⚠️'} Account ${this.status.accountVerified ? 'verified' : 'id is not configured'}`);
@@ -83,6 +82,7 @@ export class BcsApiClient {
   async ping(): Promise<boolean> {
     if (!config.bcsApi.enabled) return false;
     await getPortfolio(this);
+    this.status = { ...this.getStatus(), connected: true, accountVerified: Boolean(config.bcsApi.accountId), lastCheckedAt: new Date().toISOString(), lastPingAt: new Date().toISOString(), lastError: undefined };
     return true;
   }
 

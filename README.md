@@ -100,7 +100,7 @@ GET /health
    - `BCS_CLIENT_ID=trade-api-read`
    - `READ_ONLY_MODE=true`
    - `ALLOW_ORDER_EXECUTION=false`
-3. При старте бот вызывает `BcsApiClient.connect()`: обновляет access-token из refresh-token, делает read-only `ping()` через портфель, проверяет `BCS_ACCOUNT_ID` и пишет в лог `✅ BCS API connected`, `✅ Account verified`, `✅ Read only mode enabled` либо безопасную ошибку без токена.
+3. При старте бот выводит sanitized diagnostics: `BCS_API_ENABLED`, token `present/missing`, masked `BCS_ACCOUNT_ID`, `READ_ONLY_MODE`, `ALLOW_ORDER_EXECUTION`, `EXECUTION_MODE`, base URL `present/missing`; затем вызывает `BcsApiClient.connect()` и read-only `ping()` через портфель, пишет `✅ BCS API ping successful` или `⚠️ BCS API ping failed: ...` без токена.
 4. Бот никогда не выводит и не логирует токен. Методы `placeOrder()`, `cancelOrder()` и `executeOrder()` в READ ONLY режиме выбрасывают `READ ONLY MODE ENABLED`.
 5. Если API недоступен, бот не падает: Telegram показывает `⚠️ BCS API временно недоступен. Показываю локальные данные.`, последний sync или локальный дневник.
 
@@ -125,7 +125,7 @@ Telegram-меню показывает `🤖 Paper mode`, `⚡ Execution mode`, 
 - `portfolioSync` сохраняет snapshot портфеля и позиции в SQLite.
 - `positionSync` отдельно обновляет реальные позиции для reconciliation.
 - `tradeSync` забирает сделки через `/trade-api-bff-trade-details/api/v1/trades/search` и пишет их с deduplication по external id.
-- Статус последнего sync показывается в кнопке `🔌 Статус БКС API`.
+- Статус последнего sync и ping показывается в кнопке `🔌 Статус БКС API`; если `TELEGRAM_ADMIN_ID` задан, кнопка защищена admin guard.
 - Ошибки API логируются без токенов и не останавливают Telegram-бота.
 
 ## Деплой на Railway
