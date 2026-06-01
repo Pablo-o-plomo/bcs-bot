@@ -1,77 +1,78 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-function requireEnv(key: string): string {
-  const val = process.env[key];
-  if (!val) throw new Error(`❌ Missing required env variable: ${key}`);
-  return val;
-}
-
 function optionalEnv(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
-function qualityModeEnv(): 'low' | 'normal' | 'high' {
-  const value = optionalEnv('QUALITY_MODE', 'high').toLowerCase();
-  return value === 'low' || value === 'normal' || value === 'high' ? value : 'high';
+function numberEnv(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
 
-const okxApiKey = optionalEnv('OKX_API_KEY', '');
-const okxApiSecret = optionalEnv('OKX_API_SECRET', '');
-const okxPassphrase = optionalEnv('OKX_API_PASSPHRASE', '');
-const okxKeysPresent = Boolean(okxApiKey && okxApiSecret && okxPassphrase);
+function booleanEnv(key: string, fallback: boolean): boolean {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+}
 
 export const config = {
   telegram: {
-    botToken: requireEnv('TELEGRAM_BOT_TOKEN'),
-    chatId: requireEnv('TELEGRAM_CHAT_ID'),
-    adminId: optionalEnv('TELEGRAM_ADMIN_ID', ''),
-    sendStartupToChannel: optionalEnv('SEND_STARTUP_TO_CHANNEL', 'false') === 'true',
+    botToken: optionalEnv('TELEGRAM_BOT_TOKEN', optionalEnv('BOT_TOKEN', '')),
+    adminId: optionalEnv('TELEGRAM_ADMIN_ID', optionalEnv('ADMIN_ID', '')),
+    chatId: optionalEnv('TELEGRAM_CHAT_ID', optionalEnv('TELEGRAM_ADMIN_ID', optionalEnv('ADMIN_ID', ''))),
+    sendStartupToChannel: booleanEnv('SEND_STARTUP_TO_CHANNEL', false),
   },
-
-  okx: {
-    apiKey: okxApiKey,
-    apiSecret: okxApiSecret,
-    passphrase: okxPassphrase,
-    baseUrl: 'https://www.okx.com',
-    isDemo: optionalEnv('DEMO_TRADING', 'true') === 'true',
-  },
-
-  trading: {
-    isLive: optionalEnv('LIVE_TRADING', 'false') === 'true' && okxKeysPresent,
-    symbols: optionalEnv(
-      'SYMBOLS',
-      'BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP'
-    )
-      .split(',')
-      .map(s => s.trim()),
-
-    timeframes: optionalEnv('TIMEFRAMES', '15m,1H,4H')
-      .split(',')
-      .map(s => s.trim()),
-
-    riskPerTrade: parseFloat(optionalEnv('RISK_PER_TRADE', '1')),
-    maxDailyLoss: parseFloat(optionalEnv('MAX_DAILY_LOSS', '3')),
-    maxOpenPositions: parseInt(optionalEnv('MAX_OPEN_POSITIONS', '3')),
-    maxLossesInRow: parseInt(optionalEnv('MAX_LOSSES_IN_ROW', '3')),
-    minSignalConfidence: parseInt(
-      optionalEnv('MIN_SIGNAL_CONFIDENCE', '7')
-    ),
-    autoOptimize: optionalEnv('AUTO_OPTIMIZE', 'false') === 'true',
-    minAtrPercent: parseFloat(optionalEnv('MIN_ATR_PERCENT', '0.2')),
-    maxAtrPercent: parseFloat(optionalEnv('MAX_ATR_PERCENT', '3')),
-    defensiveModeDrawdown: parseFloat(optionalEnv('DEFENSIVE_MODE_DRAWDOWN', '5')),
-    minVolumeMultiplier: parseFloat(optionalEnv('MIN_VOLUME_MULTIPLIER', '1.2')),
-    qualityMode: qualityModeEnv(),
-
-  },
-
   database: {
-    url: optionalEnv('DATABASE_URL', './trading.db'),
+    url: optionalEnv('DATABASE_URL', './bcs.db'),
   },
-
+  broker: optionalEnv('BROKER', 'BCS'),
+  autoTrading: booleanEnv('AUTO_TRADING', false),
+  allowOrderExecution: booleanEnv('ALLOW_ORDER_EXECUTION', false),
+  readOnlyMode: booleanEnv('READ_ONLY_MODE', true),
+  execution: {
+    mode: optionalEnv('EXECUTION_MODE', 'manual_confirm') as 'manual_confirm' | 'paper' | 'semi_auto' | 'disabled',
+    maxPositionPercent: numberEnv('MAX_POSITION_PERCENT', 5),
+    maxDailyLossPercent: numberEnv('MAX_DAILY_LOSS_PERCENT', numberEnv('MAX_DAILY_LOSS', 3)),
+    maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 3),
+    allowedSymbols: optionalEnv('ALLOWED_SYMBOLS', 'Si,BR,GOLD,IMOEX,SBER,GAZP,LKOH').split(',').map(s => s.trim()).filter(Boolean),
+    allowShorts: booleanEnv('ALLOW_SHORTS', true),
+    emergencyStopEnabled: booleanEnv('EMERGENCY_STOP_ENABLED', true),
+  },
+  bcsApi: {
+    enabled: booleanEnv('BCS_API_ENABLED', false),
+    token: optionalEnv('BCS_API_TOKEN', ''),
+    accountId: optionalEnv('BCS_ACCOUNT_ID', ''),
+    clientId: optionalEnv('BCS_CLIENT_ID', 'trade-api-read'),
+    baseUrl: optionalEnv('BCS_API_BASE_URL', 'https://be.broker.ru'),
+    timeoutMs: numberEnv('BCS_API_TIMEOUT_MS', 10000),
+    maxRetries: numberEnv('BCS_API_MAX_RETRIES', 2),
+  },
+  moex: {
+    enabled: booleanEnv('MOEX_ENABLED', true),
+    baseUrl: optionalEnv('MOEX_ISS_BASE_URL', 'https://iss.moex.com/iss'),
+  },
+  openai: {
+    apiKey: optionalEnv('OPENAI_API_KEY', ''),
+  },
+  trading: {
+    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 300000),
+    riskPerTrade: numberEnv('RISK_PER_TRADE', numberEnv('DEFAULT_RISK_PER_TRADE', 1)),
+    maxDailyLoss: numberEnv('MAX_DAILY_LOSS', 3),
+    maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 5),
+    minSignalConfidence: numberEnv('MIN_SIGNAL_CONFIDENCE', 6),
+  },
+  commissions: {
+    stockFeePercent: numberEnv('BCS_STOCK_FEE_PERCENT', 0.04),
+    currencyFeePercent: numberEnv('BCS_CURRENCY_FEE_PERCENT', 0.04),
+    extraCurrencyBuyFeePercent: numberEnv('BCS_EXTRA_CURRENCY_BUY_FEE_PERCENT', 0.1),
+    futuresFeePerContract: numberEnv('BCS_FUTURES_FEE_PER_CONTRACT', 1.2),
+    optionsMaxPercent: numberEnv('BCS_OPTIONS_MAX_PERCENT', 1),
+  },
   server: {
-    port: parseInt(optionalEnv('PORT', '3000')),
+    port: numberEnv('PORT', 3000),
   },
 } as const;
 
