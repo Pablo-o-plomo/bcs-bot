@@ -2,12 +2,15 @@ import TelegramBot from 'node-telegram-bot-api';
 
 export const callbacks: Record<string, string> = {
   portfolio: '/portfolio',
+  real_portfolio: '/real_portfolio',
   add_trade: '/add_trade',
   analyze_instrument: '/analyze_instrument',
   ai_review: '/ai_review',
   risk: '/risk',
   commissions: '/commissions',
   diary: '/diary',
+  local_diary: '/diary',
+  api_status: '/api_status',
   daily_report: '/daily_report',
   monthly_report: '/monthly_report',
   settings: '/settings',
@@ -23,11 +26,13 @@ export function setAdminCommandHandler(handler: CommandHandler): void {
 export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
   return {
     inline_keyboard: [
-      [{ text: '📊 Портфель', callback_data: 'portfolio' }, { text: '📝 Добавить сделку', callback_data: 'add_trade' }],
+      [{ text: '📊 Портфель', callback_data: 'portfolio' }, { text: '📊 Реальный портфель', callback_data: 'real_portfolio' }],
+      [{ text: '📝 Добавить сделку', callback_data: 'add_trade' }, { text: '📒 Локальный дневник', callback_data: 'local_diary' }],
       [{ text: '📈 Анализ инструмента', callback_data: 'analyze_instrument' }, { text: '🧠 AI-разбор сделки', callback_data: 'ai_review' }],
       [{ text: '⚠️ Риск-менеджмент', callback_data: 'risk' }, { text: '💰 Комиссии БКС', callback_data: 'commissions' }],
       [{ text: '📋 Дневник сделок', callback_data: 'diary' }, { text: '📅 Отчет за день', callback_data: 'daily_report' }],
-      [{ text: '📆 Отчет за месяц', callback_data: 'monthly_report' }, { text: '⚙️ Настройки', callback_data: 'settings' }],
+      [{ text: '📆 Отчет за месяц', callback_data: 'monthly_report' }, { text: '🔌 Статус БКС API', callback_data: 'api_status' }],
+      [{ text: '⚙️ Настройки', callback_data: 'settings' }],
     ],
   };
 }

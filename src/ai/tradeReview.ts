@@ -20,7 +20,7 @@ export async function reviewTrade(trade: Partial<TradeInput> | null, rawText: st
 }
 
 async function openAiReview(trade: Partial<TradeInput> | null, rawText: string, settings: UserSettings): Promise<TradeReviewResult> {
-  const prompt = `Ты помощник трейдера БКС. Разбери сделку без обещаний прибыли. Обязательно оцени: логика входа, риск, RR, стоп, тейк, ошибки, рекомендация брать/пропустить/доработать. Добавь дисклеймер "Это не инвестиционная рекомендация". Сделка: ${JSON.stringify(trade)}. Описание пользователя: ${rawText}. Настройки риска: ${JSON.stringify(settings)}.`;
+  const prompt = `Ты помощник трейдера БКС. Разбери сделку без обещаний прибыли. Обязательно оцени: логика входа, риск, RR, liquidity, spread, commissions, volatility, trend, session, стоп, тейк, ошибки, рекомендация брать/пропустить/доработать. Добавь дисклеймер "Это не инвестиционная рекомендация". Сделка: ${JSON.stringify(trade)}. Описание пользователя: ${rawText}. Настройки риска: ${JSON.stringify(settings)}.`;
   const response = await axios.post('https://api.openai.com/v1/chat/completions', {
     model: 'gpt-4o-mini',
     messages: [{ role: 'user', content: prompt }],

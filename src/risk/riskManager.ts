@@ -9,6 +9,10 @@ export interface PositionRiskInput {
   direction: Direction;
   commissionRub: number;
   riskPerTradePercent?: number;
+  spreadPercent?: number | null;
+  slippageRub?: number;
+  portfolioSharePercent?: number;
+  correlatedExposurePercent?: number;
 }
 
 export interface PositionRiskResult {
@@ -45,14 +49,18 @@ export function calculatePositionRisk(input: PositionRiskInput): PositionRiskRes
     return { positionSizeRub, riskRub: 0, riskPercent: 0, allowed: false, reason: 'Сделка запрещена: стоп-лосс расположен неверно для выбранного направления.' };
   }
 
-  const riskRub = round(riskPerUnit * input.quantity + input.commissionRub);
+  const liquidityCost = (input.slippageRub ?? 0) + (input.spreadPercent ? positionSizeRub * (input.spreadPercent / 100) * 0.5 : 0);
+  const riskRub = round(riskPerUnit * input.quantity + input.commissionRub + liquidityCost);
   const riskPercent = input.depositRub > 0 ? round((riskRub / input.depositRub) * 100) : 0;
   const limit = input.riskPerTradePercent ?? config.trading.riskPerTrade;
   if (riskPercent > limit) {
     return { positionSizeRub, riskRub, riskPercent, allowed: false, reason: `Сделка запрещена: риск ${riskPercent.toFixed(2)}% выше лимита ${limit.toFixed(2)}%.` };
   }
-
-  return { positionSizeRub, riskRub, riskPercent, allowed: true, reason: `Сделка разрешена: риск ${riskPercent.toFixed(2)}% в пределах лимита ${limit.toFixed(2)}%.` };
+  if ((input.portfolioSharePercent ?? 0) > 30) {
+    return { positionSizeRub, riskRub, riskPercent, allowed: false, reason: `Сделка запрещена: концентрация ${input.portfolioSharePercent?.toFixed(1)}% выше лимита 30%.` };
+  }
+  const concentrationWarning = (input.correlatedExposurePercent ?? 0) > 30 ? ` У тебя уже ${input.correlatedExposurePercent?.toFixed(0)}% портфеля в похожих инструментах.` : '';
+  return { positionSizeRub, riskRub, riskPercent, allowed: true, reason: `Сделка разрешена: риск ${riskPercent.toFixed(2)}% в пределах лимита ${limit.toFixed(2)}%.${concentrationWarning}` };
 }
 
 export function calculateRiskReward(input: RiskRewardInput): RiskRewardResult {

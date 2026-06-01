@@ -30,6 +30,17 @@ export const config = {
   },
   broker: optionalEnv('BROKER', 'BCS'),
   autoTrading: booleanEnv('AUTO_TRADING', false),
+  allowOrderExecution: booleanEnv('ALLOW_ORDER_EXECUTION', false),
+  readOnlyMode: booleanEnv('READ_ONLY_MODE', true),
+  bcsApi: {
+    enabled: booleanEnv('BCS_API_ENABLED', false),
+    token: optionalEnv('BCS_API_TOKEN', ''),
+    accountId: optionalEnv('BCS_ACCOUNT_ID', ''),
+    clientId: optionalEnv('BCS_CLIENT_ID', 'trade-api-read'),
+    baseUrl: optionalEnv('BCS_API_BASE_URL', 'https://be.broker.ru'),
+    timeoutMs: numberEnv('BCS_API_TIMEOUT_MS', 10000),
+    maxRetries: numberEnv('BCS_API_MAX_RETRIES', 2),
+  },
   moex: {
     enabled: booleanEnv('MOEX_ENABLED', true),
     baseUrl: optionalEnv('MOEX_ISS_BASE_URL', 'https://iss.moex.com/iss'),

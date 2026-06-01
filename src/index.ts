@@ -9,6 +9,8 @@ import { initTelegramBot, sendAdminMessage, broadcastMessage } from './telegram/
 import { generateDailyReport } from './reports/dailyReport';
 import { logger } from './utils/logger';
 import { BUILD_VERSION } from './version';
+import { syncPortfolio } from './sync/portfolioSync';
+import { syncTrades } from './sync/tradeSync';
 
 async function bootstrap(): Promise<void> {
   fs.mkdirSync(path.join(process.cwd(), 'logs'), { recursive: true });
@@ -16,6 +18,7 @@ async function bootstrap(): Promise<void> {
   logger.info(`   Broker: ${config.broker}`);
   logger.info(`   Auto trading: ${config.autoTrading ? 'enabled (not implemented)' : 'disabled'}`);
   logger.info(`   MOEX enabled: ${config.moex.enabled}`);
+  logger.info(`   BCS API enabled: ${config.bcsApi.enabled}, readOnly=${config.readOnlyMode}, orderExecution=${config.allowOrderExecution}`);
 
   initDb();
   initTelegramBot();
@@ -26,6 +29,9 @@ async function bootstrap(): Promise<void> {
     broker: config.broker,
     autoTrading: false,
     moexEnabled: config.moex.enabled,
+    bcsApiEnabled: config.bcsApi.enabled,
+    readOnlyMode: config.readOnlyMode,
+    orderExecutionEnabled: false,
     build: BUILD_VERSION,
   }));
   app.listen(config.server.port, () => logger.info(`🌐 Health check: http://localhost:${config.server.port}/health`));
@@ -33,6 +39,13 @@ async function bootstrap(): Promise<void> {
   cron.schedule('55 23 * * *', async () => {
     if (config.telegram.chatId || config.telegram.adminId) await broadcastMessage(generateDailyReport());
   });
+
+  setInterval(() => {
+    syncPortfolio().catch(() => undefined);
+    syncTrades().catch(() => undefined);
+  }, 60_000);
+  syncPortfolio().catch(() => undefined);
+  syncTrades().catch(() => undefined);
 
   await sendAdminMessage(`✅ BCS Assistant Bot restarted\nBuild: ${BUILD_VERSION}\nАвтоторговля отключена.\n\n⚠️ Это не инвестиционная рекомендация.`).catch((err: any) => logger.warn(`Startup notification failed: ${err.message}`));
   logger.info('✅ Bot fully initialized');

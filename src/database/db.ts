@@ -107,6 +107,49 @@ function createTables(): void {
       FOREIGN KEY (tradeId) REFERENCES trades(id)
     );
 
+
+
+    CREATE TABLE IF NOT EXISTS bcs_portfolio_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL DEFAULT 'BCS API',
+      balance REAL NOT NULL DEFAULT 0,
+      freeCash REAL NOT NULL DEFAULT 0,
+      portfolioValue REAL NOT NULL DEFAULT 0,
+      dayPnl REAL NOT NULL DEFAULT 0,
+      totalPnl REAL NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'RUB',
+      syncedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS bcs_positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticker TEXT NOT NULL UNIQUE,
+      name TEXT,
+      quantity REAL NOT NULL DEFAULT 0,
+      averagePrice REAL NOT NULL DEFAULT 0,
+      currentPrice REAL NOT NULL DEFAULT 0,
+      unrealizedPnl REAL NOT NULL DEFAULT 0,
+      portfolioSharePercent REAL NOT NULL DEFAULT 0,
+      instrumentType TEXT,
+      classCode TEXT,
+      syncedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS bcs_trades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      externalId TEXT NOT NULL UNIQUE,
+      ticker TEXT NOT NULL,
+      side TEXT NOT NULL,
+      price REAL NOT NULL DEFAULT 0,
+      quantity REAL NOT NULL DEFAULT 0,
+      volume REAL NOT NULL DEFAULT 0,
+      commission REAL NOT NULL DEFAULT 0,
+      tradeDateTime TEXT NOT NULL,
+      instrumentType TEXT,
+      classCode TEXT,
+      syncedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS analysis_reports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       periodStart TEXT NOT NULL,
@@ -275,6 +318,46 @@ export function saveAnalysisReport(report: AnalysisReport): void {
 
 export function getBotState() {
   return { isPaused: false, consecutiveLosses: 0, dailyLossPercent: 0, lastDailyReset: new Date().toISOString().slice(0, 10), totalBalance: config.trading.defaultDepositRub, mode: 'analytics' as const };
+}
+
+export function recordReject(): void {}
+export function getRejectStats(): Array<{ reason: string; count: number }> { return []; }
+export function getRejectStatsBySymbol(): Array<{ symbol: string; count: number }> { return []; }
+export function getRejectStatsByTimeframe(): Array<{ timeframe: string; count: number }> { return []; }
+export function getRejectCountSince(): number { return 0; }
+export function getRecentSignals(): any[] { return []; }
+
+
+export function saveBcsPortfolioSnapshot(portfolio: import('../broker/bcs/types').BcsPortfolio): void {
+  db.prepare('INSERT INTO bcs_portfolio_snapshots (balance, freeCash, portfolioValue, dayPnl, totalPnl, currency) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(portfolio.money.balance, portfolio.money.freeCash, portfolio.money.portfolioValue, portfolio.money.dayPnl, portfolio.money.totalPnl, portfolio.money.currency);
+  const stmt = db.prepare(`INSERT INTO bcs_positions (ticker, name, quantity, averagePrice, currentPrice, unrealizedPnl, portfolioSharePercent, instrumentType, classCode, syncedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(ticker) DO UPDATE SET name = excluded.name, quantity = excluded.quantity, averagePrice = excluded.averagePrice, currentPrice = excluded.currentPrice, unrealizedPnl = excluded.unrealizedPnl, portfolioSharePercent = excluded.portfolioSharePercent, instrumentType = excluded.instrumentType, classCode = excluded.classCode, syncedAt = CURRENT_TIMESTAMP`);
+  for (const position of portfolio.positions) stmt.run(position.ticker, position.name ?? null, position.quantity, position.averagePrice, position.currentPrice, position.unrealizedPnl, position.portfolioSharePercent, position.instrumentType ?? null, position.classCode ?? null);
+}
+
+export function getLatestBcsPortfolioSnapshot(): any | null {
+  return db.prepare('SELECT * FROM bcs_portfolio_snapshots ORDER BY syncedAt DESC LIMIT 1').get() ?? null;
+}
+
+export function getBcsPositions(): any[] {
+  return db.prepare('SELECT * FROM bcs_positions ORDER BY portfolioSharePercent DESC').all() as any[];
+}
+
+export function upsertBcsTrades(trades: import('../broker/bcs/types').BcsTrade[]): number {
+  const stmt = db.prepare(`INSERT OR IGNORE INTO bcs_trades (externalId, ticker, side, price, quantity, volume, commission, tradeDateTime, instrumentType, classCode)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  let inserted = 0;
+  for (const trade of trades) {
+    const result = stmt.run(trade.externalId, trade.ticker, trade.side, trade.price, trade.quantity, trade.volume, trade.commission ?? 0, trade.tradeDateTime, trade.instrumentType ?? null, trade.classCode ?? null);
+    inserted += Number(result.changes ?? 0);
+  }
+  return inserted;
+}
+
+export function getBcsTrades(limit = 50): any[] {
+  return db.prepare('SELECT * FROM bcs_trades ORDER BY tradeDateTime DESC LIMIT ?').all(limit) as any[];
 }
 
 export function recordReject(): void {}

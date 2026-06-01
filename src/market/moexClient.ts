@@ -7,6 +7,11 @@ export interface MoexSecurityData {
   lastPrice: number | null;
   changePercent: number | null;
   volume: number | null;
+  bid: number | null;
+  ask: number | null;
+  spread: number | null;
+  spreadPercent: number | null;
+  volatility: number | null;
   market: string;
   board: string;
 }
@@ -62,6 +67,11 @@ async function fetchCandidate(security: string, engine: string, market: string, 
     lastPrice: numberOrNull(md.LAST ?? md.LASTVALUE ?? md.CURRENTVALUE ?? md.LCURRENTPRICE),
     changePercent: numberOrNull(md.LASTCHANGEPRCNT ?? md.CHANGE ?? md.LASTCHANGETOOPENPRC),
     volume: numberOrNull(md.VOLTODAY ?? md.VALTODAY ?? md.QTY ?? md.NUMTRADES),
+    bid: numberOrNull(md.BID ?? md.BIDDEPTHT),
+    ask: numberOrNull(md.OFFER ?? md.ASK ?? md.OFFERDEPTHT),
+    spread: calculateSpread(numberOrNull(md.BID), numberOrNull(md.OFFER ?? md.ASK)),
+    spreadPercent: calculateSpreadPercent(numberOrNull(md.BID), numberOrNull(md.OFFER ?? md.ASK)),
+    volatility: numberOrNull(md.VOLATILITY ?? md.VOLTODAY_PCT),
     market,
     board,
   };
@@ -75,6 +85,17 @@ function tableToObjects(table: any): any[] {
 function numberOrNull(value: unknown): number | null {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function calculateSpread(bid: number | null, ask: number | null): number | null {
+  if (!bid || !ask || ask < bid) return null;
+  return Math.round((ask - bid) * 10000) / 10000;
+}
+
+function calculateSpreadPercent(bid: number | null, ask: number | null): number | null {
+  if (!bid || !ask || ask < bid) return null;
+  const mid = (ask + bid) / 2;
+  return mid > 0 ? Math.round(((ask - bid) / mid) * 10000) / 100 : null;
 }
 
 export function formatMoexAnalysis(data: MoexSecurityData): string {

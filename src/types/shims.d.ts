@@ -1,3 +1,5 @@
+declare function setTimeout(handler: (...args: any[]) => void, timeout?: number): any;
+declare function setInterval(handler: (...args: any[]) => void, timeout?: number): any;
 declare const process: any;
 declare module 'dotenv' { const dotenv: { config: () => void }; export default dotenv; }
 declare module 'dotenv/config';
@@ -27,6 +29,7 @@ declare module 'axios' {
   const axios: {
     post: <T = any>(url: string, data?: any, config?: any) => Promise<{ data: T }>;
     get: <T = any>(url: string, config?: any) => Promise<{ data: T }>;
+    request: <T = any>(config?: any) => Promise<{ data: T }>;
   };
   export default axios;
 }

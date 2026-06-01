@@ -4,6 +4,8 @@ import { logger } from '../utils/logger';
 import { BUILD_VERSION } from '../version';
 import { getMainKeyboard, handleMenuCallback, setAdminCommandHandler } from './adminMenu';
 import { calculateBcsCommission } from '../broker/bcsCommission';
+import { bcsApiClient } from '../broker/bcs/client';
+import { borrowAvailable } from '../broker/bcs/shortable';
 import { calculatePositionRisk, calculateRiskReward, riskRewardWarning } from '../risk/riskManager';
 import { getMoexSecurityData, formatMoexAnalysis } from '../market/moexClient';
 import { reviewTrade } from '../ai/tradeReview';
@@ -15,6 +17,8 @@ import {
   getMonthTrades,
   getOpenTrades,
   getPositions,
+  getLatestBcsPortfolioSnapshot,
+  getBcsPositions,
   getTodayTrades,
   getTradeById,
   getUserSettings,
@@ -32,6 +36,7 @@ type DraftStep = 'instrumentType' | 'ticker' | 'direction' | 'entryPrice' | 'qua
 interface DraftTrade { step: DraftStep; data: Partial<TradeInput>; promptMessageId?: number; summary?: string }
 const drafts = new Map<string, DraftTrade>();
 const textModes = new Map<string, 'instrument_analysis' | 'ai_review' | 'set_deposit' | 'set_risk' | 'set_daily_loss' | 'set_max_positions' | 'set_tariff'>();
+const SUPPORTED_INSTRUMENTS = new Set(['SI', 'BR', 'GOLD', 'IMOEX', 'SBER', 'GAZP', 'LKOH']);
 
 export function initTelegramBot(): TelegramBot {
   if (!config.telegram.botToken) throw new Error('Missing TELEGRAM_BOT_TOKEN');
@@ -87,7 +92,7 @@ async function handleStart(msg: TelegramBot.Message): Promise<void> {
 
 async function handleCommand(chatIdValue: string, command: string, telegramId = chatIdValue): Promise<void> {
   ensureUser(telegramId);
-  if (command === '/portfolio') return send(chatIdValue, buildPortfolio(telegramId));
+  if (command === '/portfolio' || command === '/real_portfolio') return send(chatIdValue, await buildRealPortfolio(telegramId));
   if (command === '/add_trade') return startAddTrade(chatIdValue, telegramId);
   if (command === '/analyze_instrument') return requestInstrument(chatIdValue, telegramId);
   if (command === '/ai_review') return requestAiReview(chatIdValue, telegramId);
@@ -96,6 +101,7 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/diary') return send(chatIdValue, buildDiary(telegramId));
   if (command === '/daily_report') return send(chatIdValue, buildReport(telegramId, 'day'));
   if (command === '/monthly_report') return send(chatIdValue, buildReport(telegramId, 'month'));
+  if (command === '/api_status') return send(chatIdValue, buildApiStatus());
   if (command === '/settings') return sendSettings(chatIdValue, telegramId);
 }
 
@@ -212,7 +218,9 @@ async function handleDraftText(msg: TelegramBot.Message): Promise<void> {
   const text = msg.text.trim();
 
   if (draft.step === 'ticker') {
-    draft.data.ticker = text.toUpperCase();
+    const normalizedTicker = normalizeSupportedTicker(text);
+    if (!normalizedTicker) return send(chat, 'Инструмент пока не поддерживается. Доступны: Si, BR, GOLD, IMOEX, SBER, GAZP, LKOH.');
+    draft.data.ticker = normalizedTicker;
     draft.step = 'direction';
     drafts.set(telegramId, draft);
     return bot.sendMessage(chat, 'Выберите направление:', { reply_markup: { inline_keyboard: [[{ text: 'LONG', callback_data: 'draft:direction:LONG' }, { text: 'SHORT', callback_data: 'draft:direction:SHORT' }]] } });
@@ -274,9 +282,10 @@ async function prepareDraftSummary(chat: string, telegramId: string, draft: Draf
   data.rr = rr.rr;
   data.status = 'open';
   const warning = riskRewardWarning(rr.rr);
+  const shortInfo = data.direction === 'SHORT' ? await borrowAvailable(data.ticker) : null;
   draft.step = 'confirm';
   drafts.set(telegramId, draft);
-  await bot.sendMessage(chat, `🧾 <b>Проверка сделки</b>\n\nИнструмент: <b>${data.ticker}</b> (${data.instrumentType})\nНаправление: <b>${data.direction}</b>\nСумма позиции: <b>${risk.positionSizeRub.toFixed(2)} ₽</b>\nРиск: <b>${risk.riskRub.toFixed(2)} ₽</b>\nРиск %: <b>${risk.riskPercent.toFixed(2)}%</b>\nRR: <b>1:${rr.rr.toFixed(2)}</b>\nКомиссия БКС: <b>${commission.commissionRub.toFixed(2)} ₽</b>\nДетали комиссии: ${commission.details}\nИтог: <b>${risk.allowed ? '✅ Сделка разрешена' : '❌ Сделка запрещена'}</b>\n${risk.reason}\n${warning ?? ''}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '✅ Сохранить', callback_data: 'draft:save' }, { text: '❌ Отмена', callback_data: 'draft:cancel' }]] } });
+  await bot.sendMessage(chat, `🧾 <b>Проверка сделки</b>\n\nИнструмент: <b>${data.ticker}</b> (${data.instrumentType})\nНаправление: <b>${data.direction}</b>\nСумма позиции: <b>${risk.positionSizeRub.toFixed(2)} ₽</b>\nРиск: <b>${risk.riskRub.toFixed(2)} ₽</b>\nРиск %: <b>${risk.riskPercent.toFixed(2)}%</b>\nRR: <b>1:${rr.rr.toFixed(2)}</b>\nКомиссия БКС: <b>${commission.commissionRub.toFixed(2)} ₽</b>\nДетали комиссии: ${commission.details}\nИтог: <b>${risk.allowed ? '✅ Сделка разрешена' : '❌ Сделка запрещена'}</b>\n${risk.reason}\n${warning ?? ''}\n${shortInfo ? shortInfo.reason : ''}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '✅ Сохранить', callback_data: 'draft:save' }, { text: '❌ Отмена', callback_data: 'draft:cancel' }]] } });
 }
 
 async function requestInstrument(chat: string, telegramId: string): Promise<void> {
@@ -291,11 +300,13 @@ async function handleAnalyze(msg: TelegramBot.Message, ticker?: string): Promise
 }
 
 async function processMoexAnalysis(chat: string, ticker: string): Promise<void> {
+  const normalizedTicker = normalizeSupportedTicker(ticker);
+  if (!normalizedTicker) return send(chat, 'Инструмент пока не поддерживается. Доступны: Si, BR, GOLD, IMOEX, SBER, GAZP, LKOH.');
   try {
-    const data = await getMoexSecurityData(ticker);
+    const data = await getMoexSecurityData(normalizedTicker);
     await send(chat, formatMoexAnalysis(data));
   } catch (err: any) {
-    await send(chat, `📈 Анализ инструмента\n\nНе удалось получить данные MOEX по тикеру <b>${escapeHtml(ticker)}</b>: ${escapeHtml(err.message)}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`);
+    await send(chat, `📈 Анализ инструмента\n\nНе удалось получить данные MOEX по тикеру <b>${escapeHtml(normalizedTicker)}</b>: ${escapeHtml(err.message)}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`);
   }
 }
 
@@ -331,6 +342,30 @@ async function processAiReview(chat: string, telegramId: string, text: string): 
   const review = await reviewTrade(parsed, text, getUserSettings(telegramId));
   saveAiReview({ reviewText: review.reviewText, score: review.score });
   await send(chat, review.reviewText);
+}
+
+
+async function buildRealPortfolio(telegramId: string): Promise<string> {
+  if (config.bcsApi.enabled) {
+    try {
+      const portfolio = await bcsApiClient.getPortfolio();
+      const lines = portfolio.positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
+      return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API</b>\n\nБаланс: <b>${formatRub(portfolio.money.balance)}</b>\nСвободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+    } catch (err: any) {
+      logger.warn(`Real portfolio fallback: ${err.message}`);
+    }
+  }
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  const positions = getBcsPositions();
+  if (snapshot) {
+    const lines = positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
+    return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API (последний sync)</b>\n\nБаланс: <b>${formatRub(snapshot.balance)}</b>\nСвободные средства: <b>${formatRub(snapshot.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(snapshot.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+  }
+  return `${buildApiStatus()}\n\n${buildPortfolio(telegramId)}`;
+}
+
+function buildApiStatus(): string {
+  return `🔌 <b>Статус БКС API</b>\n\nBCS API: <b>${config.bcsApi.enabled && config.bcsApi.token ? '✅ подключен' : '❌ не подключен'}</b>\nREAD ONLY: <b>${config.readOnlyMode ? '✅ enabled' : '❌ disabled'}</b>\nORDER EXECUTION: <b>${config.allowOrderExecution ? '⚠️ enabled' : '❌ disabled'}</b>\nAccount ID: <code>${config.bcsApi.accountId || 'не задан'}</code>\nClient ID: <code>${config.bcsApi.clientId}</code>\n\nТокен не выводится и не логируется.`;
 }
 
 function buildPortfolio(telegramId: string): string {
@@ -416,6 +451,13 @@ function normalizeType(value: string): InstrumentType | null {
   if (['currency', 'валюта'].includes(v)) return 'currency';
   if (['bond', 'облигация'].includes(v)) return 'bond';
   if (['fund', 'фонд'].includes(v)) return 'fund';
+  return null;
+}
+
+function normalizeSupportedTicker(value: string): string | null {
+  const normalized = value.trim().toUpperCase().replace('\\', '/');
+  if (normalized === 'SI') return 'Si';
+  if (SUPPORTED_INSTRUMENTS.has(normalized)) return normalized;
   return null;
 }
 
