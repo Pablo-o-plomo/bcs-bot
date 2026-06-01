@@ -11,6 +11,10 @@ export const callbacks: Record<string, string> = {
   diary: '/diary',
   local_diary: '/diary',
   api_status: '/api_status',
+  paper_mode: '/paper_mode',
+  execution_mode: '/execution_mode',
+  risk_status: '/risk_status',
+  emergency_stop: '/emergency_stop',
   daily_report: '/daily_report',
   monthly_report: '/monthly_report',
   settings: '/settings',
@@ -26,9 +30,11 @@ export function setAdminCommandHandler(handler: CommandHandler): void {
 export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
   return {
     inline_keyboard: [
-      [{ text: '📊 Портфель', callback_data: 'portfolio' }, { text: '📊 Реальный портфель', callback_data: 'real_portfolio' }],
-      [{ text: '📝 Добавить сделку', callback_data: 'add_trade' }, { text: '📒 Локальный дневник', callback_data: 'local_diary' }],
-      [{ text: '📈 Анализ инструмента', callback_data: 'analyze_instrument' }, { text: '🧠 AI-разбор сделки', callback_data: 'ai_review' }],
+      [{ text: '📊 Портфель', callback_data: 'portfolio' }, { text: '📈 Анализ', callback_data: 'analyze_instrument' }],
+      [{ text: '📝 Сделка', callback_data: 'add_trade' }, { text: '📒 Локальный дневник', callback_data: 'local_diary' }],
+      [{ text: '🤖 Paper mode', callback_data: 'paper_mode' }, { text: '⚡ Execution mode', callback_data: 'execution_mode' }],
+      [{ text: '⚠️ Risk status', callback_data: 'risk_status' }, { text: '🚨 Emergency stop', callback_data: 'emergency_stop' }],
+      [{ text: '📊 Реальный портфель', callback_data: 'real_portfolio' }, { text: '🧠 AI-разбор сделки', callback_data: 'ai_review' }],
       [{ text: '⚠️ Риск-менеджмент', callback_data: 'risk' }, { text: '💰 Комиссии БКС', callback_data: 'commissions' }],
       [{ text: '📋 Дневник сделок', callback_data: 'diary' }, { text: '📅 Отчет за день', callback_data: 'daily_report' }],
       [{ text: '📆 Отчет за месяц', callback_data: 'monthly_report' }, { text: '🔌 Статус БКС API', callback_data: 'api_status' }],

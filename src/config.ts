@@ -32,6 +32,15 @@ export const config = {
   autoTrading: booleanEnv('AUTO_TRADING', false),
   allowOrderExecution: booleanEnv('ALLOW_ORDER_EXECUTION', false),
   readOnlyMode: booleanEnv('READ_ONLY_MODE', true),
+  execution: {
+    mode: optionalEnv('EXECUTION_MODE', 'manual_confirm') as 'manual_confirm' | 'paper' | 'semi_auto' | 'disabled',
+    maxPositionPercent: numberEnv('MAX_POSITION_PERCENT', 5),
+    maxDailyLossPercent: numberEnv('MAX_DAILY_LOSS_PERCENT', numberEnv('MAX_DAILY_LOSS', 3)),
+    maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 3),
+    allowedSymbols: optionalEnv('ALLOWED_SYMBOLS', 'Si,BR,GOLD,IMOEX,SBER,GAZP,LKOH').split(',').map(s => s.trim()).filter(Boolean),
+    allowShorts: booleanEnv('ALLOW_SHORTS', true),
+    emergencyStopEnabled: booleanEnv('EMERGENCY_STOP_ENABLED', true),
+  },
   bcsApi: {
     enabled: booleanEnv('BCS_API_ENABLED', false),
     token: optionalEnv('BCS_API_TOKEN', ''),

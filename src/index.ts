@@ -31,7 +31,10 @@ async function bootstrap(): Promise<void> {
     moexEnabled: config.moex.enabled,
     bcsApiEnabled: config.bcsApi.enabled,
     readOnlyMode: config.readOnlyMode,
-    orderExecutionEnabled: false,
+    orderExecutionEnabled: config.allowOrderExecution && !config.readOnlyMode,
+    executionMode: config.execution.mode,
+    allowedSymbols: config.execution.allowedSymbols,
+    emergencyStopEnabled: config.execution.emergencyStopEnabled,
     build: BUILD_VERSION,
   }));
   app.listen(config.server.port, () => logger.info(`🌐 Health check: http://localhost:${config.server.port}/health`));

@@ -6,6 +6,9 @@ import { getMainKeyboard, handleMenuCallback, setAdminCommandHandler } from './a
 import { calculateBcsCommission } from '../broker/bcsCommission';
 import { bcsApiClient } from '../broker/bcs/client';
 import { borrowAvailable } from '../broker/bcs/shortable';
+import { evaluateExecution } from '../execution/engine';
+import { formatManualConfirm } from '../execution/confirmFlow';
+import { getEmergencyStopStatus } from '../execution/emergencyStop';
 import { calculatePositionRisk, calculateRiskReward, riskRewardWarning } from '../risk/riskManager';
 import { getMoexSecurityData, formatMoexAnalysis } from '../market/moexClient';
 import { reviewTrade } from '../ai/tradeReview';
@@ -36,7 +39,7 @@ type DraftStep = 'instrumentType' | 'ticker' | 'direction' | 'entryPrice' | 'qua
 interface DraftTrade { step: DraftStep; data: Partial<TradeInput>; promptMessageId?: number; summary?: string }
 const drafts = new Map<string, DraftTrade>();
 const textModes = new Map<string, 'instrument_analysis' | 'ai_review' | 'set_deposit' | 'set_risk' | 'set_daily_loss' | 'set_max_positions' | 'set_tariff'>();
-const SUPPORTED_INSTRUMENTS = new Set(['SI', 'BR', 'GOLD', 'IMOEX', 'SBER', 'GAZP', 'LKOH']);
+const SUPPORTED_INSTRUMENTS = new Set(config.execution.allowedSymbols.map(symbol => symbol.toUpperCase()));
 
 export function initTelegramBot(): TelegramBot {
   if (!config.telegram.botToken) throw new Error('Missing TELEGRAM_BOT_TOKEN');
@@ -102,6 +105,10 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/daily_report') return send(chatIdValue, buildReport(telegramId, 'day'));
   if (command === '/monthly_report') return send(chatIdValue, buildReport(telegramId, 'month'));
   if (command === '/api_status') return send(chatIdValue, buildApiStatus());
+  if (command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
+  if (command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
+  if (command === '/risk_status') return send(chatIdValue, buildRiskStatus(telegramId));
+  if (command === '/emergency_stop') return send(chatIdValue, buildEmergencyStopStatus());
   if (command === '/settings') return sendSettings(chatIdValue, telegramId);
 }
 
@@ -285,7 +292,23 @@ async function prepareDraftSummary(chat: string, telegramId: string, draft: Draf
   const shortInfo = data.direction === 'SHORT' ? await borrowAvailable(data.ticker) : null;
   draft.step = 'confirm';
   drafts.set(telegramId, draft);
-  await bot.sendMessage(chat, `🧾 <b>Проверка сделки</b>\n\nИнструмент: <b>${data.ticker}</b> (${data.instrumentType})\nНаправление: <b>${data.direction}</b>\nСумма позиции: <b>${risk.positionSizeRub.toFixed(2)} ₽</b>\nРиск: <b>${risk.riskRub.toFixed(2)} ₽</b>\nРиск %: <b>${risk.riskPercent.toFixed(2)}%</b>\nRR: <b>1:${rr.rr.toFixed(2)}</b>\nКомиссия БКС: <b>${commission.commissionRub.toFixed(2)} ₽</b>\nДетали комиссии: ${commission.details}\nИтог: <b>${risk.allowed ? '✅ Сделка разрешена' : '❌ Сделка запрещена'}</b>\n${risk.reason}\n${warning ?? ''}\n${shortInfo ? shortInfo.reason : ''}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '✅ Сохранить', callback_data: 'draft:save' }, { text: '❌ Отмена', callback_data: 'draft:cancel' }]] } });
+  const executionOrder = { symbol: data.ticker, direction: data.direction, instrumentType: data.instrumentType, entryPrice: data.entryPrice, quantity: data.quantity, stopLoss: data.stopLoss, takeProfit: data.takeProfit, orderType: 'LIMIT' as const, commissionRub: commission.commissionRub, rr: rr.rr, riskPercent: risk.riskPercent, comment: data.comment };
+  const execution = await evaluateExecution(executionOrder, telegramId);
+  const executionText = formatManualConfirm(executionOrder, execution.validation);
+  const localRiskText = `
+
+🧾 <b>Локальный расчет</b>
+Сумма позиции: <b>${risk.positionSizeRub.toFixed(2)} ₽</b>
+Риск: <b>${risk.riskRub.toFixed(2)} ₽</b>
+Риск %: <b>${risk.riskPercent.toFixed(2)}%</b>
+RR: <b>1:${rr.rr.toFixed(2)}</b>
+Комиссия БКС: <b>${commission.commissionRub.toFixed(2)} ₽</b>
+Детали комиссии: ${commission.details}
+Итог дневника: <b>${risk.allowed ? '✅ Сделка разрешена' : '❌ Сделка запрещена'}</b>
+${risk.reason}
+${warning ?? ''}
+${shortInfo ? shortInfo.reason : ''}`;
+  await bot.sendMessage(chat, `${executionText}${localRiskText}`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '✅ Подтвердить', callback_data: 'draft:save' }, { text: '❌ Отмена', callback_data: 'draft:cancel' }]] } });
 }
 
 async function requestInstrument(chat: string, telegramId: string): Promise<void> {
@@ -362,6 +385,25 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
     return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API (последний sync)</b>\n\nБаланс: <b>${formatRub(snapshot.balance)}</b>\nСвободные средства: <b>${formatRub(snapshot.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(snapshot.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
   }
   return `${buildApiStatus()}\n\n${buildPortfolio(telegramId)}`;
+}
+
+function buildPaperModeStatus(): string {
+  return `🤖 <b>Paper mode</b>\n\nExecution mode: <b>${config.execution.mode}</b>\nPaper active: <b>${config.execution.mode === 'paper' ? '✅ yes' : '❌ no'}</b>\nPaper engine учитывает LIMIT price, spread, slippage и комиссии.`;
+}
+
+function buildExecutionStatus(): string {
+  const emergency = getEmergencyStopStatus();
+  return `⚡ <b>Execution status</b>\n\nExecution: <b>${config.execution.mode}</b>\nOrder execution: <b>${config.allowOrderExecution ? 'ENABLED' : 'DISABLED'}</b>\nRead only: <b>${config.readOnlyMode ? 'ENABLED' : 'DISABLED'}</b>\nEmergency stop: <b>${emergency.stopped ? 'ON' : 'OFF'}</b>\nAllowed symbols: <code>${config.execution.allowedSymbols.join(', ')}</code>\n\nMarket orders are disabled. Only LIMIT orders can pass validation.`;
+}
+
+function buildRiskStatus(telegramId: string): string {
+  const open = getOpenTrades(telegramId).length;
+  return `⚠️ <b>Risk status</b>\n\nMAX_POSITION_PERCENT: <b>${config.execution.maxPositionPercent}%</b>\nMAX_DAILY_LOSS_PERCENT: <b>${config.execution.maxDailyLossPercent}%</b>\nMAX_OPEN_POSITIONS: <b>${config.execution.maxOpenPositions}</b>\nOpen local positions: <b>${open}</b>\nRR minimum: <b>1.5</b>`;
+}
+
+function buildEmergencyStopStatus(): string {
+  const status = getEmergencyStopStatus();
+  return `🚨 <b>Emergency stop</b>\n\nEnabled: <b>${status.enabled ? 'YES' : 'NO'}</b>\nStatus: <b>${status.stopped ? 'ON' : 'OFF'}</b>\nReason: <b>${status.reason || '—'}</b>\nAPI errors: <b>${status.apiErrors}</b>\nRejects: <b>${status.rejects}</b>\n\nAlert text: 🚨 Trading stopped by emergency system`;
 }
 
 function buildApiStatus(): string {
