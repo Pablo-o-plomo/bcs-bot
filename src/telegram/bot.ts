@@ -53,7 +53,8 @@ export function initTelegramBot(): TelegramBot {
 }
 
 function registerCommands(): void {
-  bot.onText(/^\/start|^\/menu/, handleStart);
+  bot.onText(/^\/start(?:\s|$)/, handleStart);
+  bot.onText(/^\/menu(?:\s|$)/, handleMenu);
   bot.onText(/^\/portfolio/, msg => handleCommand(chatId(msg), '/portfolio', fromId(msg)));
   bot.onText(/^\/limits/, msg => handleCommand(chatId(msg), '/limits', fromId(msg)));
   bot.onText(/^\/debug_limits/, msg => handleCommand(chatId(msg), '/debug_limits', fromId(msg)));
@@ -95,7 +96,29 @@ function registerCommands(): void {
 
 async function handleStart(msg: TelegramBot.Message): Promise<void> {
   ensureUser(fromId(msg));
-  await bot.sendMessage(msg.chat.id, `🤖 <b>BCS Assistant Bot</b>\n\nДневник сделок, риск-менеджмент, комиссии БКС, MOEX-анализ и AI-разбор.\n\n⚠️ <i>Это не инвестиционная рекомендация. Автоторговля отключена.</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard() });
+  await openMainMenu(msg.chat.id.toString());
+}
+
+async function handleMenu(msg: TelegramBot.Message): Promise<void> {
+  ensureUser(fromId(msg));
+  await openMainMenu(msg.chat.id.toString());
+}
+
+async function openMainMenu(chatIdValue: string): Promise<void> {
+  logger.info('Telegram menu opened');
+  await bot.sendMessage(chatIdValue, buildWelcomeScreen(), { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
+}
+
+function buildWelcomeScreen(): string {
+  return `🤖 <b>BCS Assistant Bot</b>
+
+━━━━━━━━━━━━━━
+✅ <b>Подключение к BCS API активно.</b>
+🔒 <b>Автоторговля отключена.</b>
+🛡️ <b>Режим:</b> безопасный мониторинг.
+━━━━━━━━━━━━━━
+
+Выберите раздел:`;
 }
 
 async function handleCommand(chatIdValue: string, command: string, telegramId = chatIdValue): Promise<void> {
@@ -114,6 +137,11 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
     return send(chatIdValue, buildApiStatus());
   }
   if (command === '/limits') return send(chatIdValue, await buildLimits(telegramId));
+  if (command === '/market') return send(chatIdValue, buildSectionInDevelopment('📈 Рынок'));
+  if (command === '/ai_analysis') return send(chatIdValue, buildSectionInDevelopment('🧠 AI Анализ'));
+  if (command === '/news') return send(chatIdValue, buildSectionInDevelopment('📰 Новости'));
+  if (command === '/settings_menu') return send(chatIdValue, buildSectionInDevelopment('⚙️ Настройки'));
+  if (command === '/help') return send(chatIdValue, buildHelp());
   if (command === '/debug_limits') return send(chatIdValue, await buildDebugLimits(telegramId));
   if (command === '/debug_portfolio') return handleDebugPortfolio(chatIdValue, telegramId);
   if (command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
@@ -384,8 +412,22 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
     try {
       const portfolio = await bcsApiClient.getPortfolio();
       const moneyLines = formatCashBalances(portfolio.money.cash);
-      const lines = portfolio.positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
-      return `📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API</b>\n\nБаланс: <b>${formatRub(portfolio.money.balance)}</b>\nСвободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>\n\n💰 <b>Деньги:</b>\n${moneyLines}\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+      const positionBlock = formatBcsPortfolioPositions(portfolio.positions, portfolio.money.cash.length > 0);
+      return `📊 <b>Реальный портфель</b>
+Источник: <b>БКС API</b>
+
+Баланс: <b>${formatRub(portfolio.money.balance)}</b>
+Свободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>
+Стоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>
+Дневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>
+Общий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>
+
+💰 <b>Деньги:</b>
+${moneyLines}
+
+${positionBlock}
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
     } catch (err: any) {
       logger.warn(`Real portfolio fallback: ${err.message}`);
     }
@@ -445,6 +487,23 @@ async function handleDebugPortfolio(chatIdValue: string, telegramId: string): Pr
   }
 }
 
+
+function formatBcsPortfolioPositions(positions: Array<{ ticker: string; name?: string; quantity: number; currentPrice: number; currentValueRub?: number; dailyPL?: number; dailyPercentPL?: number; unrealizedPL?: number; unrealizedPercentPL?: number; unrealizedPnl: number }>, hasMoney: boolean): string {
+  if (!positions.length) return hasMoney ? 'Позиции: нет бумаг, только денежный остаток.' : 'Позиции:\nнет данных';
+  return `Позиции:\n${positions.map(position => [
+    `• ${position.ticker}${position.name ? ` — ${position.name}` : ''}`,
+    `  Кол-во: ${formatNumber(position.quantity)}`,
+    `  Цена: ${formatRub(position.currentPrice)}`,
+    `  Стоимость: ${formatRub(position.currentValueRub ?? position.currentPrice * position.quantity)}`,
+    `  День: ${formatRub(position.dailyPL ?? 0)} / ${formatPercent(position.dailyPercentPL ?? 0)}`,
+    `  P&L: ${formatRub(position.unrealizedPL ?? position.unrealizedPnl)} / ${formatPercent(position.unrealizedPercentPL ?? 0)}`,
+  ].join('\n')).join('\n')}`;
+}
+
+function formatPercent(value: number): string {
+  return `${formatNumber(value)}%`;
+}
+
 function formatCashBalances(cash: Array<{ currency: string; available: number; blocked: number; total: number }>, includeMajorCurrencies = false): string {
   if (!cash.length && !includeMajorCurrencies) return 'нет данных';
   const byCurrency = new Map(cash.map(item => [item.currency, item]));
@@ -458,6 +517,25 @@ function formatCashBalances(cash: Array<{ currency: string; available: number; b
 
 function formatNumber(value: number): string {
   return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function buildSectionInDevelopment(_title: string): string {
+  return '🚧 Раздел в разработке';
+}
+
+function buildHelp(): string {
+  return `ℹ️ <b>Помощь</b>
+
+<b>Основные разделы</b>
+• 📊 <code>/portfolio</code> — портфель BCS
+• 💰 <code>/limits</code> — денежные остатки
+• 🔎 <code>/debug_limits</code> — debug остатков
+• 🔎 <code>/debug_portfolio</code> — debug портфеля
+• 🧭 <code>/menu</code> — главное меню
+
+🔒 Автоторговля отключена. Бот работает в режиме безопасного мониторинга.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
 }
 
 function buildPaperModeStatus(): string {
