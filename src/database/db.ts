@@ -368,3 +368,10 @@ export function upsertBcsTrades(trades: import('../broker/bcs/types').BcsTrade[]
 export function getBcsTrades(limit = 50): any[] {
   return db.prepare('SELECT * FROM bcs_trades ORDER BY tradeDateTime DESC LIMIT ?').all(limit) as any[];
 }
+
+export function recordReject(): void {}
+export function getRejectStats(): Array<{ reason: string; count: number }> { return []; }
+export function getRejectStatsBySymbol(): Array<{ symbol: string; count: number }> { return []; }
+export function getRejectStatsByTimeframe(): Array<{ timeframe: string; count: number }> { return []; }
+export function getRejectCountSince(): number { return 0; }
+export function getRecentSignals(): any[] { return []; }
