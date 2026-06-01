@@ -13,6 +13,10 @@ import { formatManualConfirm } from '../execution/confirmFlow';
 import { getEmergencyStopStatus } from '../execution/emergencyStop';
 import { calculatePositionRisk, calculateRiskReward, riskRewardWarning } from '../risk/riskManager';
 import { getMoexSecurityData, formatMoexAnalysis } from '../market/moexClient';
+import { getMarketSnapshot } from '../market/moex';
+import { scanMarket, getTopList } from '../market/scanner';
+import { formatMarketOverview, formatScanner, formatTopList } from '../market/formatter';
+import type { TopListMode } from '../market/types';
 import { reviewTrade } from '../ai/tradeReview';
 import {
   ensureUser,
@@ -64,6 +68,7 @@ function registerCommands(): void {
   bot.onText(/^\/ai_review/, msg => handleCommand(chatId(msg), '/ai_review', fromId(msg)));
   bot.onText(/^\/market/, msg => handleCommand(chatId(msg), '/market', fromId(msg)));
   bot.onText(/^\/scanner/, msg => handleCommand(chatId(msg), '/scanner', fromId(msg)));
+  bot.onText(/^\/top(?:\s+(gainers|losers|volume))?/, (msg, match) => handleCommand(chatId(msg), `/top_${normalizeTopMode(match?.[1])}`, fromId(msg)));
   bot.onText(/^Разбери сделку(?:\s+(.+))?/i, (msg, match) => handleAiReviewText(msg, match?.[1]));
   bot.onText(/^\/risk_status/, msg => handleCommand(chatId(msg), '/risk_status', fromId(msg)));
   bot.onText(/^\/risk/, msg => handleCommand(chatId(msg), '/risk', fromId(msg)));
@@ -148,7 +153,12 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   }
   if (command === '/limits') return send(chatIdValue, await buildLimits(telegramId));
   if (command === '/ai_analysis') return send(chatIdValue, buildAiSectionInDevelopment());
-  if (command === '/market' || command === '/news') return send(chatIdValue, buildSectionInDevelopment());
+  if (command === '/market') return send(chatIdValue, await buildMarketOverview());
+  if (command === '/scanner') return send(chatIdValue, await buildMarketScanner());
+  if (command === '/top_gainers') return send(chatIdValue, await buildMarketTop('gainers'));
+  if (command === '/top_losers') return send(chatIdValue, await buildMarketTop('losers'));
+  if (command === '/top_volume') return send(chatIdValue, await buildMarketTop('volume'));
+  if (command === '/news') return send(chatIdValue, buildSectionInDevelopment());
   if (command === '/help') return send(chatIdValue, buildHelp());
   if (command === '/settings_menu' || command === '/submenu_settings') return send(chatIdValue, buildSettingsScreen(telegramId));
   if (command === '/risk_menu' || command === '/submenu_risk') return send(chatIdValue, buildRiskManagement(telegramId));
@@ -156,7 +166,7 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/daily_report_menu') return send(chatIdValue, buildReport(telegramId, 'day'));
   if (command === '/debug_limits') return send(chatIdValue, await buildDebugLimits(telegramId));
   if (command === '/debug_portfolio') return handleDebugPortfolio(chatIdValue, telegramId);
-  if (command === '/market' || command === '/scanner' || command === '/top_gainers' || command === '/top_losers' || command === '/top_volume' || command === '/export' || command === '/watchlist') return send(chatIdValue, buildSectionInDevelopment());
+  if (command === '/export' || command === '/watchlist') return send(chatIdValue, buildSectionInDevelopment());
   if (command === '/ai_portfolio' || command === '/ai_trade' || command === '/ai_risk' || command === '/ai_market_summary') return send(chatIdValue, buildAiSectionInDevelopment());
   if (command === '/set_deposit' || command === '/set_risk' || command === '/set_daily_loss' || command === '/set_max_positions' || command === '/set_tariff') return send(chatIdValue, buildSettingsActionScreen(command, telegramId));
   if (command === '/paper' || command === '/paper_mode') return send(chatIdValue, buildPaperModeStatus());
@@ -197,7 +207,12 @@ async function buildMenuScreenText(command: string, telegramId: string): Promise
   if (command === '/api_status') return isAdminAllowed(telegramId) ? buildApiStatus() : buildUiScreen('🔌 <b>Статус BCS API</b>', 'BCS Assistant Bot', '⛔️ Раздел доступен только администратору.', new Date().toISOString(), false);
   if (command === '/debug_limits') return buildDebugLimits(telegramId);
   if (command === '/debug_portfolio') return buildDebugPortfolioText(telegramId);
-  if (command === '/market' || command === '/scanner' || command === '/top_gainers' || command === '/top_losers' || command === '/top_volume' || command === '/export' || command === '/watchlist') return buildSectionInDevelopment();
+  if (command === '/market') return buildMarketOverview();
+  if (command === '/scanner') return buildMarketScanner();
+  if (command === '/top_gainers') return buildMarketTop('gainers');
+  if (command === '/top_losers') return buildMarketTop('losers');
+  if (command === '/top_volume') return buildMarketTop('volume');
+  if (command === '/export' || command === '/watchlist') return buildSectionInDevelopment();
   if (command === '/ai_analysis' || command === '/ai_portfolio' || command === '/ai_trade' || command === '/ai_risk' || command === '/ai_market_summary') return buildAiSectionInDevelopment();
   if (command === '/risk' || command === '/risk_settings') return buildRiskManagement(telegramId);
   if (command === '/risk_status') return buildRiskStatus(telegramId);
@@ -236,11 +251,11 @@ function logMenuCommandReuse(command: string): void {
 }
 
 function isPlaceholderCommand(command: string): boolean {
-  return ['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_analysis', '/ai_portfolio', '/ai_trade', '/ai_risk', '/ai_market_summary', '/export', '/watchlist'].includes(command);
+  return ['/ai_analysis', '/ai_portfolio', '/ai_trade', '/ai_risk', '/ai_market_summary', '/export', '/watchlist'].includes(command);
 }
 
 function isExistingHandlerCommand(command: string): boolean {
-  return ['/portfolio', '/real_portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio', '/risk', '/risk_settings', '/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/help'].includes(command);
+  return ['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume', '/portfolio', '/real_portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio', '/risk', '/risk_settings', '/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/help'].includes(command);
 }
 
 async function editMenuMessage(chatIdValue: string, messageId: number, text: string, replyMarkup: TelegramBot.SendMessageOptions['reply_markup']): Promise<number> {
@@ -532,6 +547,31 @@ async function processAiReview(chat: string, telegramId: string, text: string): 
   await send(chat, review.reviewText);
 }
 
+
+
+async function buildMarketOverview(): Promise<string> {
+  const snapshot = await getMarketSnapshot();
+  const { signals } = await scanMarket();
+  const { instruments: gainers } = await getTopList('gainers');
+  const { instruments: losers } = await getTopList('losers');
+  return formatMarketOverview(snapshot, signals, gainers, losers);
+}
+
+async function buildMarketScanner(): Promise<string> {
+  const { snapshot, signals } = await scanMarket();
+  return formatScanner(snapshot, signals);
+}
+
+async function buildMarketTop(mode: TopListMode): Promise<string> {
+  const { snapshot, instruments } = await getTopList(mode);
+  return formatTopList(snapshot, mode, instruments);
+}
+
+function normalizeTopMode(value?: string): TopListMode {
+  if (value === 'losers') return 'losers';
+  if (value === 'volume') return 'volume';
+  return 'gainers';
+}
 
 async function buildMenuPortfolioScreen(telegramId: string): Promise<string> {
   if (config.bcsApi.enabled) {

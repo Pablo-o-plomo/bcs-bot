@@ -18,10 +18,16 @@ export const callbacks: Record<string, string> = {
   debug_portfolio: '/debug_portfolio',
 
   market: '/market',
+  market_overview: '/market',
   scanner: '/scanner',
+  market_scanner: '/scanner',
   top_gainers: '/top_gainers',
+  market_top_gainers: '/top_gainers',
   top_losers: '/top_losers',
+  market_top_losers: '/top_losers',
   top_volume: '/top_volume',
+  market_top_volume: '/top_volume',
+  market_refresh: '/market',
 
   ai_analysis: '/ai_analysis',
   news: '/ai_market_summary',
@@ -94,11 +100,11 @@ export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions
   if (['/portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio'].includes(command)) return getBackHomeKeyboard('portfolio');
 
   if (command === '/submenu_market') return withHome([
-    [{ text: '📈 Обзор MOEX', callback_data: 'market' }, { text: '🔥 Scanner', callback_data: 'scanner' }],
-    [{ text: '🟢 Лидеры роста', callback_data: 'top_gainers' }, { text: '🔴 Лидеры падения', callback_data: 'top_losers' }],
-    [{ text: '📊 Объемы', callback_data: 'top_volume' }],
+    [{ text: '📈 Обзор MOEX', callback_data: 'market_overview' }, { text: '🔥 Scanner', callback_data: 'market_scanner' }],
+    [{ text: '🟢 Лидеры роста', callback_data: 'market_top_gainers' }, { text: '🔴 Лидеры падения', callback_data: 'market_top_losers' }],
+    [{ text: '📊 Объемы', callback_data: 'market_top_volume' }],
   ]);
-  if (['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume'].includes(command)) return getBackHomeKeyboard('market');
+  if (['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume'].includes(command)) return withBackHome('market', [[{ text: '🔄 Обновить', callback_data: 'market_refresh' }]]);
 
   if (command === '/submenu_ai') return withHome([
     [{ text: '🧠 AI-разбор портфеля', callback_data: 'ai_portfolio' }],
