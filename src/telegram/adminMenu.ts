@@ -156,3 +156,21 @@ export async function handleMenuCallback(query: TelegramBot.CallbackQuery): Prom
   logger.info(`callback_handled: ${data} -> ${command}`);
   await commandHandler(query.message?.chat.id.toString() ?? query.from.id.toString(), command, query.from.id.toString(), query.message?.message_id);
 }
+
+async function renderUnknownCallback(bot: TelegramBot, message: TelegramBot.Message): Promise<void> {
+  const text = `⚠️ <b>Неизвестная кнопка.</b>
+
+Вернитесь в главное меню.`;
+  try {
+    await bot.editMessageText(text, {
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(),
+      disable_web_page_preview: true,
+    });
+  } catch (err: any) {
+    logger.warn(`button_action_failed: unknown_callback_render: ${err?.message ?? err}`);
+    await bot.sendMessage(message.chat.id, text, { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
+  }
+}

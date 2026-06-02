@@ -394,6 +394,181 @@ async function editMenuMessage(chatIdValue: string, messageId: number, text: str
   return targetMessageId;
 }
 
+
+async function renderMenuScreen(chatIdValue: string, messageId: number, command: string, telegramId: string): Promise<void> {
+  logger.info(`menu_navigation: command=${command}`);
+  if (command === '/menu') {
+    await editMenuMessage(chatIdValue, messageId, buildWelcomeScreen(), getMenuKeyboard('/menu'));
+    logger.info('screen_rendered: main_menu');
+    logger.info('main_menu_rendered');
+    return;
+  }
+
+  const targetMessageId = await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю...</b>', getNavigationKeyboard());
+  const aiCommand = isAiCommand(command);
+  if (aiCommand) logger.info(`ai_callback_started: ${command}`);
+  try {
+    const textPromise = buildMenuScreenText(command, telegramId);
+    const text = aiCommand
+      ? await withTimeout(textPromise, 5000, buildAiTimeoutFallback(command, telegramId), `ai_callback:${command}`)
+      : await textPromise;
+    await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
+    logger.info(`screen_rendered: ${command}`);
+    if (command.startsWith('/submenu_')) logger.info(`submenu_rendered: ${command}`);
+    if (aiCommand) logger.info(`ai_callback_finished: ${command}`);
+  } catch (err: any) {
+    if (aiCommand) logger.warn(`ai_callback_failed: ${command}: ${err?.message ?? err}`);
+    const text = aiCommand ? buildAiExceptionFallback(command, telegramId) : buildUiScreen('⚠️ <b>Ошибка</b>', 'BCS Assistant Bot', 'Не удалось загрузить раздел. Вернитесь в главное меню.', new Date().toISOString(), false);
+    await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
+  }
+}
+
+async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
+  logMenuCommandReuse(command);
+  if (command === '/submenu_portfolio') return buildSubmenuScreen('💼 <b>Портфель</b>', 'Выберите данные по счету BCS или debug-раздел.');
+  if (command === '/submenu_debug') return buildSubmenuScreen('🧪 <b>Debug</b>', 'Диагностика raw-ответов BCS API. Раздел скрыт из главного меню.');
+  if (command === '/submenu_market') return buildSubmenuScreen('📡 <b>Рынок</b>', 'MOEX-обзор, сканер и лидерборды рынка.');
+  if (command === '/submenu_ai') return buildSubmenuScreen('🧠 <b>AI Анализ</b>', 'AI-разборы портфеля, сделок, риска и рынка.');
+  if (command === '/submenu_risk' || command === '/risk_menu') return buildSubmenuScreen('⚠️ <b>Риск</b>', 'Статус риска, тестовый режим, режим заявок, аварийная остановка и риск-настройки.');
+  if (command === '/submenu_reports') return buildSubmenuScreen('📋 <b>Отчеты</b>', 'Дневник сделок, дневные/месячные отчеты, комиссии и экспорт.');
+  if (command === '/submenu_settings' || command === '/settings_menu' || command === '/settings') return buildSettingsScreen(telegramId);
+  if (command === '/portfolio' || command === '/real_portfolio') return buildMenuPortfolioScreen(telegramId);
+  if (command === '/limits') return buildMenuLimitsScreen(telegramId);
+  if (command === '/api_status') return isAdminAllowed(telegramId) ? buildApiStatus() : buildUiScreen('🔌 <b>Статус BCS API</b>', 'BCS Assistant Bot', '⛔️ Раздел доступен только администратору.', new Date().toISOString(), false);
+  if (command === '/debug_limits') return buildDebugLimits(telegramId);
+  if (command === '/debug_portfolio') return buildDebugPortfolioText(telegramId);
+  if (command === '/market') return buildMarketOverview();
+  if (command === '/scanner') return buildMarketScanner();
+  if (command === '/top_gainers') return buildMarketTop('gainers');
+  if (command === '/top_losers') return buildMarketTop('losers');
+  if (command === '/top_volume') return buildMarketTop('volume');
+  if (command === '/export' || command === '/watchlist') return buildSectionInDevelopment();
+  if (command === '/ai_analysis') return buildAiMarketAnalysis();
+  if (command === '/ai_portfolio') return buildAiPortfolioAnalysis(telegramId);
+  if (command === '/ai_market' || command === '/ai_market_summary') return buildAiMarketAnalysis();
+  if (command === '/ai_risk') return buildAiRiskAnalysis(telegramId);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  if (command === '/risk' || command === '/risk_settings') return buildRiskManagement(telegramId);
+  if (command === '/risk_status') return buildRiskStatus(telegramId);
+  if (command === '/paper' || command === '/paper_mode') return buildPaperModeStatus();
+  if (command === '/execution' || command === '/execution_mode') return buildExecutionStatus();
+  if (command === '/emergency_stop') return buildEmergencyStopStatus();
+  if (command === '/journal' || command === '/diary' || command === '/diary_menu') return buildDiary(telegramId);
+  if (command === '/daily_report' || command === '/daily_report_menu') return buildReport(telegramId, 'day');
+  if (command === '/monthly_report') return buildReport(telegramId, 'month');
+  if (command === '/commissions') return buildCommissions(telegramId);
+  if (command === '/set_deposit' || command === '/set_risk' || command === '/set_daily_loss' || command === '/set_max_positions' || command === '/set_tariff') return buildSettingsActionScreen(command, telegramId);
+  if (command === '/help') return buildHelp();
+  return buildWelcomeScreen();
+}
+
+
+
+function isAiCommand(command: string): boolean {
+  return ['/ai_analysis', '/ai_portfolio', '/ai_market', '/ai_market_summary', '/ai_risk', '/ai_deal', '/ai_trade'].includes(command);
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const timeout = new Promise<T>(resolve => {
+    timeoutId = globalThis.setTimeout(() => {
+      logger.warn(`ai_timeout: ${label}`);
+      resolve(fallback);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId);
+  }
+}
+
+function buildAiTimeoutFallback(command: string, telegramId: string): string {
+  logger.info(`ai_fallback_used: timeout:${command}`);
+  if (command === '/ai_risk') return buildAiRiskLocalFallback(telegramId, true);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  return buildAiExceptionFallback(command, telegramId);
+}
+
+function buildAiExceptionFallback(command: string, telegramId: string): string {
+  logger.info(`ai_fallback_used: exception:${command}`);
+  if (command === '/ai_risk') return buildAiRiskLocalFallback(telegramId, true);
+  if (command === '/ai_portfolio') return buildAiPortfolioLocalFallback(telegramId);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  if (command === '/ai_market' || command === '/ai_market_summary' || command === '/ai_analysis') return buildAiMarketLocalFallback();
+  return buildUiScreen('🧠 <b>AI-анализ</b>', 'Локальный анализ по правилам', `⚠️ AI-анализ временно недоступен. Показываю базовую оценку.
+
+Сценарий: режим наблюдения / тестовый режим.
+Риск: не открывать реальные сделки без плана, стопа и подтверждения условий входа.
+Что проверить: рыночный фон, объем, RR и дневной лимит риска.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`, new Date().toISOString(), false);
+}
+
+
+interface RenderContext { chatIdValue: string; telegramId: string; menuMessageId?: number }
+
+async function renderOrSend(ctx: RenderContext, text: string, replyMarkup?: TelegramBot.SendMessageOptions['reply_markup']): Promise<number | undefined> {
+  if (ctx.menuMessageId) {
+    return editMenuMessage(ctx.chatIdValue, ctx.menuMessageId, text, replyMarkup ?? getNavigationKeyboard());
+  }
+  const sent = await bot.sendMessage(ctx.chatIdValue, text, { parse_mode: 'HTML', reply_markup: replyMarkup, disable_web_page_preview: true });
+  return sent.message_id;
+}
+
+function logMenuCommandReuse(command: string): void {
+  if (isPlaceholderCommand(command)) {
+    logger.info(`callback_placeholder_used: ${command}`);
+    return;
+  }
+  if (isExistingHandlerCommand(command)) {
+    logger.info(`callback_mapped_to_existing_handler: ${command}`);
+    logger.info(`existing_handler_reused: ${command}`);
+  }
+}
+
+function isPlaceholderCommand(command: string): boolean {
+  return ['/export', '/watchlist'].includes(command);
+}
+
+function isExistingHandlerCommand(command: string): boolean {
+  return ['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_analysis', '/ai_portfolio', '/ai_market', '/ai_market_summary', '/ai_risk', '/ai_deal', '/ai_trade', '/portfolio', '/real_portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio', '/risk', '/risk_settings', '/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/help'].includes(command);
+}
+
+async function editMenuMessage(chatIdValue: string, messageId: number, text: string, replyMarkup: TelegramBot.SendMessageOptions['reply_markup']): Promise<number> {
+  let targetMessageId = messageId;
+  let textEdited = false;
+  try {
+    await bot.editMessageText(text, {
+      chat_id: chatIdValue,
+      message_id: messageId,
+      parse_mode: 'HTML',
+      reply_markup: replyMarkup,
+      disable_web_page_preview: true,
+    });
+    textEdited = true;
+  } catch (err: any) {
+    const message = String(err?.message ?? err);
+    if (message.includes('message is not modified')) {
+      textEdited = true;
+    } else {
+      logger.warn(`edit_message_failed: ${message}`);
+      const fallback = await bot.sendMessage(chatIdValue, text, { parse_mode: 'HTML', reply_markup: replyMarkup, disable_web_page_preview: true });
+      targetMessageId = fallback.message_id;
+    }
+  }
+
+  if (textEdited) {
+    try {
+      await (bot as any).editMessageReplyMarkup(replyMarkup, { chat_id: chatIdValue, message_id: targetMessageId });
+    } catch (err: any) {
+      const message = String(err?.message ?? err);
+      if (!message.includes('message is not modified')) logger.warn(`edit_message_failed: ${message}`);
+    }
+  }
+  return targetMessageId;
+}
+
 async function startAddTrade(chatIdValue: string, telegramId: string): Promise<void> {
   const user = ensureUser(telegramId);
   const message = await bot.sendMessage(chatIdValue, '📝 Выберите тип инструмента:', {
@@ -1018,6 +1193,27 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
 
 
 
+async function buildMenuLimitsScreen(telegramId: string): Promise<string> {
+  if (!config.bcsApi.enabled) return buildUiScreen('💰 <b>Остатки</b>', 'BCS API', 'BCS API отключен.', new Date().toISOString(), false);
+  try {
+    const limits = await bcsApiClient.getLimits();
+    const body = limits.cash.length ? formatCashBalances(limits.cash) : 'BCS API вернул limits, но денежные остатки не найдены. Выполните /debug_limits.';
+    return buildUiScreen('💰 <b>Остатки</b>', 'BCS API limits', body, limits.updatedAt, false);
+  } catch (err: any) {
+    logger.warn(`Menu limits BCS fallback: ${err.message}`);
+    return buildUiScreen('💰 <b>Остатки</b>', 'Локальные данные', `⚠️ BCS API временно недоступен
+Показываю локальные данные.
+
+${err.message}`, new Date().toISOString(), false);
+  }
+}
+
+async function buildRealPortfolio(telegramId: string): Promise<string> {
+  return buildMenuPortfolioScreen(telegramId);
+}
+
+
+
 async function buildLimits(telegramId: string): Promise<string> {
   if (!config.bcsApi.enabled) return '💵 <b>Остатки</b>\n\nBCS API отключен.';
   try {
@@ -1436,6 +1632,46 @@ async function handleTradeDetails(chat: string, id: number): Promise<void> {
   if (!id) return send(chat, 'Укажите ID сделки: /trade 123');
   const t = getTradeById(id);
   await send(chat, t ? `🧾 <b>Сделка #${t.id}</b>\n\n${t.ticker} ${t.direction}\nВход: ${t.entryPrice}\nСтоп: ${t.stopLoss}\nТейк: ${t.takeProfit}\nКомиссия: ${t.commission}\nКомментарий: ${t.comment ?? '—'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>` : `Сделка #${id} не найдена.`);
+}
+
+async function sendPortfolioCharts(chat: string): Promise<void> {
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  if (!snapshot) return;
+  const positions = getBcsPositions().map(position => ({ ticker: position.ticker, valueRub: Number(position.currentPrice ?? 0) * Number(position.quantity ?? 0), pnlPercent: Number(position.portfolioSharePercent ?? 0) }));
+  await sendPhoto(chat, buildPortfolioDashboardChartUrl({ balance: snapshot.balance, freeCash: snapshot.freeCash, dayPnl: snapshot.dayPnl, totalPnl: snapshot.totalPnl, positions }), '💼 AI dashboard card');
+  const trades = getLastNTrades(30);
+  await sendPhoto(chat, buildEquityCurveChartUrl(buildEquityPoints(trades)), '📈 Equity curve');
+}
+
+async function sendMarketCharts(chat: string, mode: 'market' | 'scanner'): Promise<void> {
+  try {
+    const snapshot = await getMarketSnapshot();
+    if (mode === 'market') {
+      await sendPhoto(chat, buildMarketHeatmapChartUrl(snapshot.instruments), '🗺 MOEX heatmap');
+      await sendPhoto(chat, buildMiniCandlesChartUrl(snapshot.instruments), '🕯 Mini candles');
+      return;
+    }
+    const { signals } = await scanMarket();
+    await sendPhoto(chat, buildAiDashboardChartUrl(signals), '📡 AI scanner dashboard');
+  } catch (err: any) {
+    logger.warn(`chart_send_failed: ${err?.message ?? err}`);
+  }
+}
+
+async function sendPhoto(chat: string, url: string, caption: string): Promise<void> {
+  try {
+    await (bot as any).sendPhoto(chat, url, { caption, parse_mode: 'HTML' });
+  } catch (err: any) {
+    logger.warn(`chart_send_failed: ${err?.message ?? err}`);
+  }
+}
+
+function buildEquityPoints(trades: Array<{ pnl?: number; closedAt?: string; createdAt: string }>): Array<{ label: string; value: number }> {
+  let equity = 0;
+  return trades.slice().reverse().map((trade, index) => {
+    equity += Number(trade.pnl ?? 0);
+    return { label: trade.closedAt?.slice(5, 10) ?? trade.createdAt?.slice(5, 10) ?? `${index + 1}`, value: Number(equity.toFixed(2)) };
+  });
 }
 
 function parseTradeLine(telegramId: string, text: string): Partial<TradeInput> | null {
