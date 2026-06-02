@@ -2,13 +2,11 @@ import TelegramBot from 'node-telegram-bot-api';
 import { logger } from '../utils/logger';
 
 export const callbacks: Record<string, string> = {
-  portfolio: '/submenu_portfolio',
-  portfolio_menu: '/submenu_portfolio',
-  market_menu: '/submenu_market',
-  ai_menu: '/submenu_ai',
-  risk_menu: '/submenu_risk',
-  reports_menu: '/submenu_reports',
-  settings_menu: '/submenu_settings',
+  portfolio: '/portfolio',
+  portfolio_menu: '/portfolio',
+  ai_signal: '/ai_signal',
+  market_menu: '/market',
+  settings_menu: '/settings',
 
   real_portfolio: '/portfolio',
   limits: '/limits',
@@ -29,7 +27,8 @@ export const callbacks: Record<string, string> = {
   market_top_volume: '/top_volume',
   market_refresh: '/market',
 
-  ai_analysis: '/ai_analysis',
+  ai_analysis: '/ai_signal',
+  ai_menu: '/ai_signal',
   news: '/ai_market',
   ai_portfolio: '/ai_portfolio',
   ai_deal: '/ai_deal',
@@ -37,14 +36,18 @@ export const callbacks: Record<string, string> = {
   ai_risk: '/ai_risk',
   ai_market: '/ai_market',
   ai_market_summary: '/ai_market',
+  signal_enter: '/signal_enter',
+  signal_skip: '/signal_skip',
 
-  risk: '/submenu_risk',
+  risk: '/risk',
+  risk_menu: '/risk',
   risk_status: '/risk_status',
   paper_mode: '/paper',
   execution_mode: '/execution',
   emergency_stop: '/emergency_stop',
   risk_settings: '/risk',
 
+  reports_menu: '/journal',
   diary_menu: '/journal',
   diary: '/journal',
   daily_report_menu: '/daily_report',
@@ -62,12 +65,12 @@ export const callbacks: Record<string, string> = {
   watchlist: '/watchlist',
   help: '/help',
 
-  menu_back_portfolio: '/submenu_portfolio',
-  menu_back_market: '/submenu_market',
-  menu_back_ai: '/submenu_ai',
-  menu_back_risk: '/submenu_risk',
-  menu_back_reports: '/submenu_reports',
-  menu_back_settings: '/submenu_settings',
+  menu_back_portfolio: '/portfolio',
+  menu_back_market: '/market',
+  menu_back_ai: '/ai_signal',
+  menu_back_risk: '/settings',
+  menu_back_reports: '/settings',
+  menu_back_settings: '/settings',
   menu_back_main: '/menu',
   menu_back: '/menu',
   menu_home: '/menu',
@@ -83,104 +86,75 @@ export function setAdminCommandHandler(handler: CommandHandler): void {
 export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
   return {
     inline_keyboard: [
-      [{ text: '💼 Портфель', callback_data: 'portfolio_menu' }, { text: '📡 Рынок', callback_data: 'market_menu' }],
-      [{ text: '🧠 AI Анализ', callback_data: 'ai_menu' }, { text: '⚠️ Риск', callback_data: 'risk_menu' }],
-      [{ text: '📋 Отчеты', callback_data: 'reports_menu' }, { text: '⚙️ Настройки', callback_data: 'settings_menu' }],
+      [{ text: '💼 Портфель', callback_data: 'portfolio_menu' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }],
+      [{ text: '📈 Рынок', callback_data: 'market_menu' }, { text: '⚙️ Настройки', callback_data: 'settings_menu' }],
     ],
   };
 }
 
 export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions['reply_markup'] {
   if (command === '/menu') return getMainKeyboard();
-  if (command === '/submenu_portfolio') return withHome([
-    [{ text: '📊 Реальный портфель', callback_data: 'real_portfolio' }, { text: '💰 Остатки', callback_data: 'limits' }],
-    [{ text: '🔌 Статус BCS API', callback_data: 'api_status' }, { text: '🧪 Debug', callback_data: 'debug_menu' }],
-  ]);
+  if (command === '/ai_signal') return {
+    inline_keyboard: [
+      [{ text: '✅ Войти', callback_data: 'signal_enter' }, { text: '❌ Пропустить', callback_data: 'signal_skip' }],
+      [{ text: '🔄 Новый сигнал', callback_data: 'ai_signal' }, { text: '🏠 Главное меню', callback_data: 'menu_home' }],
+    ],
+  };
+  if (command === '/settings') return {
+    inline_keyboard: [
+      [{ text: '📉 Риск', callback_data: 'set_risk' }, { text: '💵 Плановый капитал', callback_data: 'set_deposit' }],
+      [{ text: '⚡ Режим', callback_data: 'execution_mode' }, { text: '🔌 API', callback_data: 'api_status' }],
+      [{ text: '🏠 Главное меню', callback_data: 'menu_home' }],
+    ],
+  };
+  if (command === '/market') return withHome([[{ text: '🔄 Обновить', callback_data: 'market_refresh' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }]]);
+  if (command === '/portfolio') return withHome([[{ text: '🔄 Обновить', callback_data: 'real_portfolio' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }]]);
+  if (['/signal_enter', '/signal_skip'].includes(command)) return withHome([[{ text: '📡 Новый сигнал', callback_data: 'ai_signal' }]]);
+  if (['/set_deposit', '/set_risk', '/execution', '/execution_mode', '/api_status'].includes(command)) return withBackHome('settings');
+
+  // Legacy hidden flows remain available through commands/callback aliases, but not from the main UI.
   if (command === '/submenu_debug') return withBackHome('portfolio', [
     [{ text: '🔎 Debug limits', callback_data: 'debug_limits' }, { text: '🔎 Debug portfolio', callback_data: 'debug_portfolio' }],
   ]);
-  if (['/portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio'].includes(command)) return getBackHomeKeyboard('portfolio');
+  if (['/limits', '/debug_limits', '/debug_portfolio'].includes(command)) return getBackHomeKeyboard('portfolio');
+  if (['/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_market', '/ai_market_summary'].includes(command)) return getBackHomeKeyboard('market');
+  if (['/ai_portfolio', '/ai_deal', '/ai_trade', '/ai_risk'].includes(command)) return getBackHomeKeyboard('ai');
+  if (['/risk_status', '/paper', '/paper_mode', '/emergency_stop', '/risk'].includes(command)) return getBackHomeKeyboard('settings');
+  if (['/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/export', '/watchlist', '/help'].includes(command)) return getBackHomeKeyboard('settings');
 
-  if (command === '/submenu_market') return withHome([
-    [{ text: '📈 Обзор MOEX', callback_data: 'market_overview' }, { text: '📡 Сканер рынка', callback_data: 'market_scanner' }],
-    [{ text: '🟢 Лидеры роста', callback_data: 'market_top_gainers' }, { text: '🔴 Лидеры падения', callback_data: 'market_top_losers' }],
-    [{ text: '📊 Объемы', callback_data: 'market_top_volume' }],
-  ]);
-  if (['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume'].includes(command)) return withBackHome('market', [[{ text: '🔄 Обновить', callback_data: 'market_refresh' }]]);
-
-  if (command === '/submenu_ai') return withHome([
-    [{ text: '🧠 AI-разбор портфеля', callback_data: 'ai_portfolio' }, { text: '📈 AI-сводка рынка', callback_data: 'ai_market' }],
-    [{ text: '⚠️ AI-риск', callback_data: 'ai_risk' }, { text: '📈 AI-разбор сделки', callback_data: 'ai_deal' }],
-  ]);
-  if (['/ai_analysis', '/ai_portfolio', '/ai_deal', '/ai_trade', '/ai_risk', '/ai_market', '/ai_market_summary'].includes(command)) return withBackHome('ai', [[{ text: '🔄 Обновить', callback_data: command === '/ai_market' || command === '/ai_market_summary' ? 'ai_market' : command === '/ai_risk' ? 'ai_risk' : command === '/ai_deal' || command === '/ai_trade' ? 'ai_deal' : 'ai_portfolio' }]]);
-
-  if (command === '/submenu_risk') return withHome([
-    [{ text: '⚠️ Статус риска', callback_data: 'risk_status' }, { text: '🧪 Тестовый режим', callback_data: 'paper_mode' }],
-    [{ text: '⚡ Режим заявок', callback_data: 'execution_mode' }, { text: '🛡 Настройки риска', callback_data: 'risk_settings' }],
-    [{ text: '🚨 Аварийная остановка', callback_data: 'emergency_stop' }],
-  ]);
-  if (['/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/risk'].includes(command)) return getBackHomeKeyboard('risk');
-
-  if (command === '/submenu_reports') return withHome([
-    [{ text: '📋 Дневник сделок', callback_data: 'diary' }, { text: '📅 Отчет за день', callback_data: 'daily_report' }],
-    [{ text: '🗓 Отчет за месяц', callback_data: 'monthly_report' }, { text: '💸 Комиссии БКС', callback_data: 'commissions' }],
-    [{ text: '📤 Экспорт', callback_data: 'export' }],
-  ]);
-  if (['/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/export'].includes(command)) return getBackHomeKeyboard('reports');
-
-  if (command === '/submenu_settings') return withHome([
-    [{ text: '💵 Плановый капитал', callback_data: 'set_deposit' }, { text: '📉 Риск %', callback_data: 'set_risk' }],
-    [{ text: '📉 Дневной лимит', callback_data: 'set_daily_loss' }, { text: '🔢 Максимум позиций', callback_data: 'set_max_positions' }],
-    [{ text: '💸 Тариф комиссии', callback_data: 'set_tariff' }, { text: '📌 Watchlist', callback_data: 'watchlist' }],
-    [{ text: 'ℹ️ Помощь', callback_data: 'help' }],
-  ]);
-  if (['/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/watchlist', '/help'].includes(command)) return getBackHomeKeyboard('settings');
-
-  return getBackHomeKeyboard('main');
+  return getMainKeyboard();
 }
 
-export function getNavigationKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
-  return getBackHomeKeyboard('main');
+export function getNavigationKeyboard(parent: string = 'main'): TelegramBot.SendMessageOptions['reply_markup'] {
+  return getBackHomeKeyboard(parent);
+}
+
+export function getBackHomeKeyboard(parent: string = 'main'): TelegramBot.SendMessageOptions['reply_markup'] {
+  return withBackHome(parent);
 }
 
 function withHome(rows: Array<Array<{ text: string; callback_data: string }>>): TelegramBot.SendMessageOptions['reply_markup'] {
-  return { inline_keyboard: [...rows, [{ text: '⬅️ Назад', callback_data: 'menu_back_main' }, { text: '🏠 Главное меню', callback_data: 'menu_home' }]] };
+  return { inline_keyboard: [...rows, [{ text: '🏠 Главное меню', callback_data: 'menu_home' }]] };
 }
 
-function withBackHome(parent: string, rows: Array<Array<{ text: string; callback_data: string }>>): TelegramBot.SendMessageOptions['reply_markup'] {
+function withBackHome(parent: string = 'main', rows: Array<Array<{ text: string; callback_data: string }>> = []): TelegramBot.SendMessageOptions['reply_markup'] {
   return { inline_keyboard: [...rows, [{ text: '⬅️ Назад', callback_data: `menu_back_${parent}` }, { text: '🏠 Главное меню', callback_data: 'menu_home' }]] };
 }
 
-function getBackHomeKeyboard(parent: string): TelegramBot.SendMessageOptions['reply_markup'] {
-  return withBackHome(parent, []);
-}
-
-export async function handleMenuCallback(bot: TelegramBot, query: TelegramBot.CallbackQuery): Promise<boolean> {
-  if (!query.data || !query.message) return false;
-  logger.info(`callback_received: ${query.data}`);
-  const command = callbacks[query.data];
+export async function handleMenuCallback(query: TelegramBot.CallbackQuery): Promise<void> {
+  logger.info(`callback_received: ${query.data ?? 'empty'}`);
+  logger.info(`button_clicked: ${query.data ?? 'unknown'}`);
+  const data = query.data ?? '';
+  const command = callbacks[data];
   if (!command || !commandHandler) {
-    logger.warn(`callback_unknown: ${query.data}`);
-    await bot.answerCallbackQuery(query.id, { text: 'Неизвестная кнопка' }).catch(() => undefined);
-    await renderUnknownCallback(bot, query.message);
-    return true;
+    logger.warn(`callback_unknown: ${data}`);
+    await commandHandler?.(query.message?.chat.id.toString() ?? query.from.id.toString(), '/unknown', query.from.id.toString(), query.message?.message_id);
+    return;
   }
-
-  logger.info(`button_clicked: ${query.data}`);
-  logger.info(`button_action_started: ${query.data}`);
-  if (query.data.startsWith('menu_back')) logger.info(`navigation_back: ${query.data}`);
-  if (query.data === 'menu_home') logger.info('navigation_home');
-  if (command.startsWith('/submenu_')) logger.info(`submenu_opened: ${command}`);
-  logger.info(`menu_navigation: ${query.data} -> ${command}`);
-  await bot.answerCallbackQuery(query.id, { text: 'OK' });
-  try {
-    await commandHandler(query.message.chat.id.toString(), command, query.from.id.toString(), query.message.message_id);
-    logger.info(`callback_handled: ${query.data}`);
-  } catch (err: any) {
-    logger.error(`button_action_failed: ${query.data}: ${err?.message ?? err}`);
-    throw err;
-  }
-  return true;
+  if (data.startsWith('menu_back')) logger.info(`navigation_back: ${data}`);
+  if (data === 'menu_home') logger.info('navigation_home');
+  logger.info(`callback_handled: ${data} -> ${command}`);
+  await commandHandler(query.message?.chat.id.toString() ?? query.from.id.toString(), command, query.from.id.toString(), query.message?.message_id);
 }
 
 async function renderUnknownCallback(bot: TelegramBot, message: TelegramBot.Message): Promise<void> {

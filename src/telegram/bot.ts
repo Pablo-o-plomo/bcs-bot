@@ -16,8 +16,7 @@ import { getMoexSecurityData, formatMoexAnalysis } from '../market/moexClient';
 import { getMarketSnapshot } from '../market/moex';
 import { scanMarket, getTopList } from '../market/scanner';
 import { formatMarketOverview, formatScanner, formatTopList } from '../market/formatter';
-import { buildAiDashboardChartUrl, buildEquityCurveChartUrl, buildMarketHeatmapChartUrl, buildMiniCandlesChartUrl, buildPortfolioDashboardChartUrl } from '../charts/quickchart';
-import type { TopListMode } from '../market/types';
+import type { MarketInstrument, ScannerSignal, TopListMode } from '../market/types';
 import { reviewTrade } from '../ai/tradeReview';
 import { analyzeDeal, analyzeMarket, analyzePortfolio } from '../ai/analyzer';
 import { fallbackMarketAnalysis, fallbackPortfolioAnalysis } from '../ai/fallback';
@@ -96,7 +95,7 @@ function registerCommands(): void {
     try {
       if (query.data?.startsWith('draft:')) return handleDraftCallback(query);
       if (query.data?.startsWith('settings:')) return handleSettingsCallback(query);
-      await handleMenuCallback(bot, query);
+      await handleMenuCallback(query);
     } catch (err: any) {
       logger.error(`Callback error: ${err.message}`);
       await bot.answerCallbackQuery(query.id, { text: 'Ошибка' }).catch(() => undefined);
@@ -127,29 +126,52 @@ async function handleMenu(msg: TelegramBot.Message): Promise<void> {
 
 async function openMainMenu(chatIdValue: string): Promise<void> {
   logger.info('menu_opened');
-  await bot.sendMessage(chatIdValue, buildWelcomeScreen(), { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
+  await bot.sendMessage(chatIdValue, await buildHomeScreen(), { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
   logger.info('main_menu_rendered');
 }
 
-function buildWelcomeScreen(): string {
+async function buildHomeScreen(): Promise<string> {
   logger.info('ux_terms_normalized');
-  return `🤖 <b>BCS Assistant</b>
+  try {
+    const { snapshot, signals } = await scanMarket();
+    const index = snapshot.instruments.find(item => item.ticker.toUpperCase() === 'IMOEX');
+    const brent = snapshot.instruments.find(item => item.ticker.toUpperCase() === 'BR');
+    const banks = snapshot.instruments.filter(item => ['SBER', 'VTBR'].includes(item.ticker.toUpperCase()));
+    const strongSignals = signals.filter(signal => signal.confidence >= 7 && signal.action !== 'SKIP').length;
+    const bankStrength = banks.length && banks.reduce((sum, item) => sum + (item.changePercent ?? 0), 0) / banks.length > 0.4 ? 'strong' : 'neutral';
+    return `🧠 <b>AI MARKET STATUS</b>
 
-🛡 <b>Только просмотр</b> · заявки отключены
-🧠 AI terminal · MOEX · BCS API
+IMOEX: <b>${trendWord(index?.changePercent)}</b>
+Oil: <b>${trendWord(brent?.changePercent)}</b>
+Banks: <b>${bankStrength}</b>
 
-💼 Портфель  📡 Рынок  ⚠️ Риск
+Сегодня найдено: <b>${strongSignals}</b> сильных сигнала
 
-Выберите раздел:`;
+🛡 Только просмотр · заявки отключены`;
+  } catch (err: any) {
+    logger.warn(`home_market_summary_failed: ${err?.message ?? err}`);
+    return `🧠 <b>AI MARKET STATUS</b>
+
+IMOEX: <b>unknown</b>
+Oil: <b>unknown</b>
+Banks: <b>unknown</b>
+
+Сегодня найдено: <b>0</b> сильных сигналов
+
+🛡 Только просмотр · заявки отключены`;
+  }
+}
+
+function buildWelcomeScreen(): string {
+  return `🧠 <b>AI MARKET STATUS</b>
+
+Выберите действие.`;
 }
 
 async function handleCommand(chatIdValue: string, command: string, telegramId = chatIdValue, menuMessageId?: number): Promise<void> {
   ensureUser(telegramId);
   if (menuMessageId) return renderMenuScreen(chatIdValue, menuMessageId, command, telegramId);
-  if (command === '/portfolio' || command === '/real_portfolio') {
-    await send(chatIdValue, await buildRealPortfolio(telegramId));
-    return sendPortfolioCharts(chatIdValue);
-  }
+  if (command === '/portfolio' || command === '/real_portfolio') return send(chatIdValue, await buildRealPortfolio(telegramId));
   if (command === '/add_trade') return startAddTrade(chatIdValue, telegramId);
   if (command === '/analyze_instrument') return requestInstrument(chatIdValue, telegramId);
   if (command === '/ai_review') return requestAiReview(chatIdValue, telegramId);
@@ -168,21 +190,18 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/ai_market' || command === '/ai_market_summary') return send(chatIdValue, await buildAiMarketAnalysis());
   if (command === '/ai_risk') return send(chatIdValue, await buildAiRiskAnalysis(telegramId));
   if (command === '/ai_deal' || command === '/ai_trade') return send(chatIdValue, buildAiDealPrompt(telegramId));
-  if (command === '/market') {
-    await send(chatIdValue, await buildMarketOverview());
-    return sendMarketCharts(chatIdValue, 'market');
-  }
-  if (command === '/scanner') {
-    await send(chatIdValue, await buildMarketScanner());
-    return sendMarketCharts(chatIdValue, 'scanner');
-  }
+  if (command === '/market') return send(chatIdValue, await buildMinimalMarket());
+  if (command === '/scanner') return send(chatIdValue, await buildAiSignal());
   if (command === '/top_gainers') return send(chatIdValue, await buildMarketTop('gainers'));
   if (command === '/top_losers') return send(chatIdValue, await buildMarketTop('losers'));
   if (command === '/top_volume') return send(chatIdValue, await buildMarketTop('volume'));
+  if (command === '/ai_signal') return send(chatIdValue, await buildAiSignal());
+  if (command === '/signal_enter') return send(chatIdValue, buildSignalEnterScreen());
+  if (command === '/signal_skip') return send(chatIdValue, buildSignalSkipScreen());
   if (command === '/news') return send(chatIdValue, buildSectionInDevelopment());
   if (command === '/help') return send(chatIdValue, buildHelp());
   if (command === '/settings_menu' || command === '/submenu_settings') return send(chatIdValue, buildSettingsScreen(telegramId));
-  if (command === '/risk_menu' || command === '/submenu_risk') return send(chatIdValue, buildRiskManagement(telegramId));
+  if (command === '/risk_menu' || command === '/submenu_risk') return send(chatIdValue, buildSettingsScreen(telegramId));
   if (command === '/diary_menu') return send(chatIdValue, buildDiary(telegramId));
   if (command === '/daily_report_menu') return send(chatIdValue, buildReport(telegramId, 'day'));
   if (command === '/debug_limits') return send(chatIdValue, await buildDebugLimits(telegramId));
@@ -194,7 +213,185 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/execution' || command === '/execution_mode') return send(chatIdValue, buildExecutionStatus());
   if (command === '/risk_status') return send(chatIdValue, buildRiskStatus(telegramId));
   if (command === '/emergency_stop') return send(chatIdValue, buildEmergencyStopStatus());
-  if (command === '/settings') return sendSettings(chatIdValue, telegramId);
+  if (command === '/settings') return send(chatIdValue, buildSettingsScreen(telegramId));
+}
+
+
+async function renderMenuScreen(chatIdValue: string, messageId: number, command: string, telegramId: string): Promise<void> {
+  logger.info(`menu_navigation: command=${command}`);
+  if (command === '/menu') {
+    await editMenuMessage(chatIdValue, messageId, await buildHomeScreen(), getMenuKeyboard('/menu'));
+    logger.info('screen_rendered: main_menu');
+    logger.info('main_menu_rendered');
+    return;
+  }
+
+  const targetMessageId = await editMenuMessage(chatIdValue, messageId, '⏳ <b>Загружаю...</b>', getNavigationKeyboard());
+  const aiCommand = isAiCommand(command);
+  if (aiCommand) logger.info(`ai_callback_started: ${command}`);
+  try {
+    const textPromise = buildMenuScreenText(command, telegramId);
+    const text = aiCommand
+      ? await withTimeout(textPromise, 5000, buildAiTimeoutFallback(command, telegramId), `ai_callback:${command}`)
+      : await textPromise;
+    await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
+    logger.info(`screen_rendered: ${command}`);
+    if (command.startsWith('/submenu_')) logger.info(`submenu_rendered: ${command}`);
+    if (aiCommand) logger.info(`ai_callback_finished: ${command}`);
+  } catch (err: any) {
+    if (aiCommand) logger.warn(`ai_callback_failed: ${command}: ${err?.message ?? err}`);
+    const text = aiCommand ? buildAiExceptionFallback(command, telegramId) : buildUiScreen('⚠️ <b>Ошибка</b>', 'BCS Assistant Bot', 'Не удалось загрузить раздел. Вернитесь в главное меню.', new Date().toISOString(), false);
+    await renderOrSend({ chatIdValue, telegramId, menuMessageId: targetMessageId }, text, getMenuKeyboard(command));
+  }
+}
+
+async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
+  logMenuCommandReuse(command);
+  if (command === '/submenu_portfolio') return buildMenuPortfolioScreen(telegramId);
+  if (command === '/submenu_debug') return buildSubmenuScreen('🧪 <b>Debug</b>', 'Диагностика raw-ответов BCS API. Раздел скрыт из главного меню.');
+  if (command === '/submenu_market') return buildMinimalMarket();
+  if (command === '/submenu_ai') return buildAiSignal();
+  if (command === '/submenu_risk' || command === '/risk_menu') return buildSettingsScreen(telegramId);
+  if (command === '/submenu_reports') return buildSettingsScreen(telegramId);
+  if (command === '/submenu_settings' || command === '/settings_menu' || command === '/settings') return buildSettingsScreen(telegramId);
+  if (command === '/portfolio' || command === '/real_portfolio') return buildMenuPortfolioScreen(telegramId);
+  if (command === '/limits') return buildMenuLimitsScreen(telegramId);
+  if (command === '/api_status') return isAdminAllowed(telegramId) ? buildApiStatus() : buildUiScreen('🔌 <b>Статус BCS API</b>', 'BCS Assistant Bot', '⛔️ Раздел доступен только администратору.', new Date().toISOString(), false);
+  if (command === '/debug_limits') return buildDebugLimits(telegramId);
+  if (command === '/debug_portfolio') return buildDebugPortfolioText(telegramId);
+  if (command === '/market') return buildMinimalMarket();
+  if (command === '/scanner') return buildAiSignal();
+  if (command === '/top_gainers') return buildMarketTop('gainers');
+  if (command === '/top_losers') return buildMarketTop('losers');
+  if (command === '/top_volume') return buildMarketTop('volume');
+  if (command === '/export' || command === '/watchlist') return buildSectionInDevelopment();
+  if (command === '/ai_signal') return buildAiSignal();
+  if (command === '/signal_enter') return buildSignalEnterScreen();
+  if (command === '/signal_skip') return buildSignalSkipScreen();
+  if (command === '/ai_analysis') return buildAiSignal();
+  if (command === '/ai_portfolio') return buildAiPortfolioAnalysis(telegramId);
+  if (command === '/ai_market' || command === '/ai_market_summary') return buildAiMarketAnalysis();
+  if (command === '/ai_risk') return buildAiRiskAnalysis(telegramId);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  if (command === '/risk' || command === '/risk_settings') return buildRiskManagement(telegramId);
+  if (command === '/risk_status') return buildRiskStatus(telegramId);
+  if (command === '/paper' || command === '/paper_mode') return buildPaperModeStatus();
+  if (command === '/execution' || command === '/execution_mode') return buildExecutionStatus();
+  if (command === '/emergency_stop') return buildEmergencyStopStatus();
+  if (command === '/journal' || command === '/diary' || command === '/diary_menu') return buildDiary(telegramId);
+  if (command === '/daily_report' || command === '/daily_report_menu') return buildReport(telegramId, 'day');
+  if (command === '/monthly_report') return buildReport(telegramId, 'month');
+  if (command === '/commissions') return buildCommissions(telegramId);
+  if (command === '/set_deposit' || command === '/set_risk' || command === '/set_daily_loss' || command === '/set_max_positions' || command === '/set_tariff') return buildSettingsActionScreen(command, telegramId);
+  if (command === '/help') return buildHelp();
+  return buildWelcomeScreen();
+}
+
+
+
+function isAiCommand(command: string): boolean {
+  return ['/ai_signal', '/ai_analysis', '/ai_portfolio', '/ai_market', '/ai_market_summary', '/ai_risk', '/ai_deal', '/ai_trade'].includes(command);
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const timeout = new Promise<T>(resolve => {
+    timeoutId = globalThis.setTimeout(() => {
+      logger.warn(`ai_timeout: ${label}`);
+      resolve(fallback);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId);
+  }
+}
+
+function buildAiTimeoutFallback(command: string, telegramId: string): string {
+  logger.info(`ai_fallback_used: timeout:${command}`);
+  if (command === '/ai_risk') return buildAiRiskLocalFallback(telegramId, true);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  return buildAiExceptionFallback(command, telegramId);
+}
+
+function buildAiExceptionFallback(command: string, telegramId: string): string {
+  logger.info(`ai_fallback_used: exception:${command}`);
+  if (command === '/ai_risk') return buildAiRiskLocalFallback(telegramId, true);
+  if (command === '/ai_portfolio') return buildAiPortfolioLocalFallback(telegramId);
+  if (command === '/ai_deal' || command === '/ai_trade') return buildAiDealPrompt(telegramId);
+  if (command === '/ai_market' || command === '/ai_market_summary' || command === '/ai_analysis') return buildAiMarketLocalFallback();
+  return buildUiScreen('🧠 <b>AI-анализ</b>', 'Локальный анализ по правилам', `⚠️ AI-анализ временно недоступен. Показываю базовую оценку.
+
+Сценарий: режим наблюдения / тестовый режим.
+Риск: не открывать реальные сделки без плана, стопа и подтверждения условий входа.
+Что проверить: рыночный фон, объем, RR и дневной лимит риска.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`, new Date().toISOString(), false);
+}
+
+
+interface RenderContext { chatIdValue: string; telegramId: string; menuMessageId?: number }
+
+async function renderOrSend(ctx: RenderContext, text: string, replyMarkup?: TelegramBot.SendMessageOptions['reply_markup']): Promise<number | undefined> {
+  if (ctx.menuMessageId) {
+    return editMenuMessage(ctx.chatIdValue, ctx.menuMessageId, text, replyMarkup ?? getNavigationKeyboard());
+  }
+  const sent = await bot.sendMessage(ctx.chatIdValue, text, { parse_mode: 'HTML', reply_markup: replyMarkup, disable_web_page_preview: true });
+  return sent.message_id;
+}
+
+function logMenuCommandReuse(command: string): void {
+  if (isPlaceholderCommand(command)) {
+    logger.info(`callback_placeholder_used: ${command}`);
+    return;
+  }
+  if (isExistingHandlerCommand(command)) {
+    logger.info(`callback_mapped_to_existing_handler: ${command}`);
+    logger.info(`existing_handler_reused: ${command}`);
+  }
+}
+
+function isPlaceholderCommand(command: string): boolean {
+  return ['/export', '/watchlist'].includes(command);
+}
+
+function isExistingHandlerCommand(command: string): boolean {
+  return ['/market', '/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_analysis', '/ai_portfolio', '/ai_market', '/ai_market_summary', '/ai_risk', '/ai_deal', '/ai_trade', '/portfolio', '/real_portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio', '/risk', '/risk_settings', '/risk_status', '/paper', '/paper_mode', '/execution', '/execution_mode', '/emergency_stop', '/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/settings', '/set_deposit', '/set_risk', '/set_daily_loss', '/set_max_positions', '/set_tariff', '/help'].includes(command);
+}
+
+async function editMenuMessage(chatIdValue: string, messageId: number, text: string, replyMarkup: TelegramBot.SendMessageOptions['reply_markup']): Promise<number> {
+  let targetMessageId = messageId;
+  let textEdited = false;
+  try {
+    await bot.editMessageText(text, {
+      chat_id: chatIdValue,
+      message_id: messageId,
+      parse_mode: 'HTML',
+      reply_markup: replyMarkup,
+      disable_web_page_preview: true,
+    });
+    textEdited = true;
+  } catch (err: any) {
+    const message = String(err?.message ?? err);
+    if (message.includes('message is not modified')) {
+      textEdited = true;
+    } else {
+      logger.warn(`edit_message_failed: ${message}`);
+      const fallback = await bot.sendMessage(chatIdValue, text, { parse_mode: 'HTML', reply_markup: replyMarkup, disable_web_page_preview: true });
+      targetMessageId = fallback.message_id;
+    }
+  }
+
+  if (textEdited) {
+    try {
+      await (bot as any).editMessageReplyMarkup(replyMarkup, { chat_id: chatIdValue, message_id: targetMessageId });
+    } catch (err: any) {
+      const message = String(err?.message ?? err);
+      if (!message.includes('message is not modified')) logger.warn(`edit_message_failed: ${message}`);
+    }
+  }
+  return targetMessageId;
 }
 
 
@@ -643,6 +840,80 @@ async function buildMarketScanner(): Promise<string> {
   return formatScanner(snapshot, signals);
 }
 
+async function buildMinimalMarket(): Promise<string> {
+  const { snapshot, signals } = await scanMarket();
+  const index = findMarketInstrument(snapshot.instruments, 'IMOEX');
+  const oil = findMarketInstrument(snapshot.instruments, 'BR');
+  const usd = findMarketInstrument(snapshot.instruments, 'Si');
+  const volatility = marketVolatility(snapshot.instruments);
+  const sentiment = marketSentiment(index?.changePercent ?? 0, signals);
+  return `📈 <b>РЫНОК</b>
+
+IMOEX: <b>${compactChange(index?.changePercent)}</b>
+Нефть: <b>${compactChange(oil?.changePercent)}</b>
+USD/RUB: <b>${compactChange(usd?.changePercent)}</b>
+Volatility: <b>${volatility}</b>
+Sentiment: <b>${sentiment}</b>
+
+${snapshot.fallback ? '⚠️ Данные из cached/mock snapshot\n' : ''}⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+}
+
+async function buildAiSignal(): Promise<string> {
+  const { snapshot, signals } = await scanMarket();
+  const best = pickBestSignal(signals);
+  if (!best) {
+    return `📡 <b>AI СИГНАЛ</b>
+
+⚪ Сильной идеи сейчас нет.
+
+Лучшее действие: <b>ждать</b>
+Риск: <b>средний</b>
+
+Причина:
+рынок не дает достаточно чистого momentum.
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+  }
+  const instrument = findMarketInstrument(snapshot.instruments, best.ticker);
+  const entry = instrument?.lastPrice ?? 0;
+  const levels = buildSignalLevels(entry, best.action);
+  const sideEmoji = best.action === 'SHORT' ? '🔴' : best.action === 'LONG' ? '🟢' : '🟡';
+  const action = best.action === 'SKIP' ? 'WATCH' : best.action;
+  return `📡 <b>AI СИГНАЛ</b>
+
+${sideEmoji} <b>${best.ticker} ${action}</b>
+
+Вход: <b>${formatPriceValue(entry)}</b>
+TP: <b>${levels.tp.join(' · ')}</b>
+SL: <b>${formatPriceValue(levels.sl)}</b>
+
+Confidence: <b>${best.confidence.toFixed(1)}/10</b>
+Risk: <b>${riskText(best.risk)}</b>
+
+Причина:
+${best.reasons.slice(0, 3).join(', ')}.
+
+TP1 ✅ · TP2 ⏳ · TP3 ❌
+
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+}
+
+function buildSignalEnterScreen(): string {
+  return `✅ <b>Сделка не отправлена</b>
+
+Реальные заявки отключены.
+Режим: <b>Только просмотр</b>
+
+Что сделать:
+проверьте уровень, риск и подтверждение объема вручную.`;
+}
+
+function buildSignalSkipScreen(): string {
+  return `❌ <b>Сигнал пропущен</b>
+
+Ок. Ждем более чистый сценарий.`;
+}
+
 async function buildMarketTop(mode: TopListMode): Promise<string> {
   const { snapshot, instruments } = await getTopList(mode);
   return formatTopList(snapshot, mode, instruments);
@@ -922,6 +1193,27 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
 
 
 
+async function buildMenuLimitsScreen(telegramId: string): Promise<string> {
+  if (!config.bcsApi.enabled) return buildUiScreen('💰 <b>Остатки</b>', 'BCS API', 'BCS API отключен.', new Date().toISOString(), false);
+  try {
+    const limits = await bcsApiClient.getLimits();
+    const body = limits.cash.length ? formatCashBalances(limits.cash) : 'BCS API вернул limits, но денежные остатки не найдены. Выполните /debug_limits.';
+    return buildUiScreen('💰 <b>Остатки</b>', 'BCS API limits', body, limits.updatedAt, false);
+  } catch (err: any) {
+    logger.warn(`Menu limits BCS fallback: ${err.message}`);
+    return buildUiScreen('💰 <b>Остатки</b>', 'Локальные данные', `⚠️ BCS API временно недоступен
+Показываю локальные данные.
+
+${err.message}`, new Date().toISOString(), false);
+  }
+}
+
+async function buildRealPortfolio(telegramId: string): Promise<string> {
+  return buildMenuPortfolioScreen(telegramId);
+}
+
+
+
 async function buildLimits(telegramId: string): Promise<string> {
   if (!config.bcsApi.enabled) return '💵 <b>Остатки</b>\n\nBCS API отключен.';
   try {
@@ -1041,6 +1333,61 @@ function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function findMarketInstrument(items: MarketInstrument[], ticker: string): MarketInstrument | undefined {
+  return items.find(item => item.ticker.toUpperCase() === ticker.toUpperCase());
+}
+
+function compactChange(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function trendWord(value: number | null | undefined): string {
+  if (value === null || value === undefined) return 'unknown';
+  if (value > 0.4) return 'bullish';
+  if (value < -0.4) return 'bearish';
+  return 'neutral';
+}
+
+function marketVolatility(items: MarketInstrument[]): string {
+  const max = Math.max(0, ...items.map(item => Math.abs(item.volatility ?? item.changePercent ?? 0)));
+  if (max >= 2.5) return 'high';
+  if (max >= 1.2) return 'medium';
+  return 'low';
+}
+
+function marketSentiment(imoex: number, signals: ScannerSignal[]): string {
+  const strong = signals.filter(signal => signal.confidence >= 7 && signal.action !== 'SKIP').length;
+  if (imoex > 0.5 && strong >= 1) return 'bullish';
+  if (imoex < -0.5) return 'bearish';
+  return 'neutral';
+}
+
+function pickBestSignal(signals: ScannerSignal[]): ScannerSignal | undefined {
+  return signals
+    .filter(signal => signal.action !== 'SKIP')
+    .sort((a, b) => b.confidence - a.confidence)[0] ?? signals.sort((a, b) => b.confidence - a.confidence)[0];
+}
+
+function buildSignalLevels(entry: number, action: string): { tp: string[]; sl: number } {
+  if (!entry) return { tp: ['—', '—', '—'], sl: 0 };
+  const direction = action === 'SHORT' ? -1 : 1;
+  const tp = [0.012, 0.025, 0.045].map(step => formatPriceValue(entry * (1 + direction * step)));
+  const sl = entry * (1 - direction * 0.01);
+  return { tp, sl };
+}
+
+function formatPriceValue(value: number): string {
+  if (!value) return '—';
+  return value.toLocaleString('ru-RU', { maximumFractionDigits: value < 1 ? 5 : 2 });
+}
+
+function riskText(value: string): string {
+  if (value === 'low') return 'low';
+  if (value === 'high') return 'high';
+  return 'medium';
 }
 
 
@@ -1251,16 +1598,14 @@ ${worst.length ? worst.map(t => `• #${t.id} ${t.ticker}: ${formatRub(t.pnl)}`)
 
 function buildSettingsScreen(telegramId: string): string {
   const s = getUserSettings(telegramId);
-  const fee = getBrokerFee(s.userId);
-  const body = `Плановый капитал: <b>${formatPlannedCapital(s.depositRub)}</b>
-Риск на сделку: <b>${s.riskPerTrade.toFixed(2)}%</b>
-Дневной лимит убытка: <b>${s.maxDailyLoss.toFixed(2)}%</b>
-Максимум позиций: <b>${s.maxOpenPositions}</b>
+  const api = bcsApiClient.getStatus();
+  const body = `📉 Риск: <b>${s.riskPerTrade.toFixed(2)}%</b>
+💵 Плановый капитал: <b>${formatPlannedCapital(s.depositRub)}</b>
+⚡ Режим торговли: <b>${executionModeRu(config.execution.mode)}</b>
+🔌 API: <b>${api.connected ? 'активен' : config.bcsApi.enabled ? 'ожидает ответа' : 'отключен'}</b>
 
-Комиссии: <b>${fee.tariffName}</b>
-Акции: <b>${fee.stockFeePercent}%</b>
-Инструменты: <code>${getInstruments().map(i => i.ticker).join(', ')}</code>`;
-  return buildUiScreen('⚙️ <b>Настройки</b>', 'Локальные настройки', body, new Date().toISOString(), false);
+🛡 Только просмотр · заявки отключены`;
+  return buildUiScreen('⚙️ <b>НАСТРОЙКИ</b>', 'BCS Assistant', body, new Date().toISOString(), false);
 }
 
 async function sendSettings(chat: string, telegramId: string): Promise<void> {
