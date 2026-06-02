@@ -16,6 +16,7 @@ import { getMoexSecurityData, formatMoexAnalysis } from '../market/moexClient';
 import { getMarketSnapshot } from '../market/moex';
 import { scanMarket, getTopList } from '../market/scanner';
 import { formatMarketOverview, formatScanner, formatTopList } from '../market/formatter';
+import { buildAiDashboardChartUrl, buildEquityCurveChartUrl, buildMarketHeatmapChartUrl, buildMiniCandlesChartUrl, buildPortfolioDashboardChartUrl } from '../charts/quickchart';
 import type { MarketInstrument, ScannerSignal, TopListMode } from '../market/types';
 import { reviewTrade } from '../ai/tradeReview';
 import { analyzeDeal, analyzeMarket, analyzePortfolio } from '../ai/analyzer';
@@ -1101,28 +1102,6 @@ ${err.message}`, new Date().toISOString(), false);
 async function buildRealPortfolio(telegramId: string): Promise<string> {
   return buildMenuPortfolioScreen(telegramId);
 }
-
-
-
-async function buildMenuLimitsScreen(telegramId: string): Promise<string> {
-  if (!config.bcsApi.enabled) return buildUiScreen('💰 <b>Остатки</b>', 'BCS API', 'BCS API отключен.', new Date().toISOString(), false);
-  try {
-    const limits = await bcsApiClient.getLimits();
-    const body = limits.cash.length ? formatCashBalances(limits.cash) : 'BCS API вернул limits, но денежные остатки не найдены. Выполните /debug_limits.';
-    return buildUiScreen('💰 <b>Остатки</b>', 'BCS API limits', body, limits.updatedAt, false);
-  } catch (err: any) {
-    logger.warn(`Menu limits BCS fallback: ${err.message}`);
-    return buildUiScreen('💰 <b>Остатки</b>', 'Локальные данные', `⚠️ BCS API временно недоступен
-Показываю локальные данные.
-
-${err.message}`, new Date().toISOString(), false);
-  }
-}
-
-async function buildRealPortfolio(telegramId: string): Promise<string> {
-  return buildMenuPortfolioScreen(telegramId);
-}
-
 
 
 
