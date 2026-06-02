@@ -93,6 +93,33 @@ export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'
       [{ text: '💼 Портфель', callback_data: 'portfolio_menu' }, { text: '⚙️ Риск', callback_data: 'risk_core' }],
     ],
   };
+  if (command === '/settings') return {
+    inline_keyboard: [
+      [{ text: '📉 Риск', callback_data: 'set_risk' }, { text: '💵 Плановый капитал', callback_data: 'set_deposit' }],
+      [{ text: '⚡ Режим', callback_data: 'execution_mode' }, { text: '🔌 API', callback_data: 'api_status' }],
+      [{ text: '🏠 Главное меню', callback_data: 'menu_home' }],
+    ],
+  };
+  if (command === '/market') return withHome([[{ text: '🔄 Обновить', callback_data: 'market_refresh' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }]]);
+  if (command === '/portfolio') return withHome([[{ text: '🔄 Обновить', callback_data: 'real_portfolio' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }]]);
+  if (['/signal_enter', '/signal_skip'].includes(command)) return withHome([[{ text: '📡 Новый сигнал', callback_data: 'ai_signal' }]]);
+  if (['/set_deposit', '/set_risk', '/execution', '/execution_mode', '/api_status'].includes(command)) return withBackHome('settings');
+
+  // Legacy hidden flows remain available through commands/callback aliases, but not from the main UI.
+  if (command === '/submenu_debug') return withBackHome('portfolio', [
+    [{ text: '🔎 Debug limits', callback_data: 'debug_limits' }, { text: '🔎 Debug portfolio', callback_data: 'debug_portfolio' }],
+  ]);
+  if (['/limits', '/debug_limits', '/debug_portfolio'].includes(command)) return getBackHomeKeyboard('portfolio');
+  if (['/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_market', '/ai_market_summary'].includes(command)) return getBackHomeKeyboard('market');
+  if (['/ai_portfolio', '/ai_deal', '/ai_trade', '/ai_risk'].includes(command)) return getBackHomeKeyboard('ai');
+  if (['/risk_status', '/paper', '/paper_mode', '/emergency_stop', '/risk'].includes(command)) return getBackHomeKeyboard('settings');
+  if (['/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/export', '/watchlist', '/help'].includes(command)) return getBackHomeKeyboard('settings');
+
+  return getMainKeyboard();
+}
+
+export function getNavigationKeyboard(parent: string = 'main'): TelegramBot.SendMessageOptions['reply_markup'] {
+  return getBackHomeKeyboard(parent);
 }
 
 export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions['reply_markup'] {
