@@ -63,7 +63,13 @@ export const config = {
     riskPerTrade: numberEnv('RISK_PER_TRADE', numberEnv('DEFAULT_RISK_PER_TRADE', 1)),
     maxDailyLoss: numberEnv('MAX_DAILY_LOSS', 3),
     maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 5),
-    minSignalConfidence: numberEnv('MIN_SIGNAL_CONFIDENCE', 6),
+    minSignalConfidence: numberEnv('MIN_SIGNAL_CONFIDENCE', 7),
+  },
+  marketScan: {
+    enabled: booleanEnv('MARKET_SCAN_ENABLED', true),
+    intervalSeconds: numberEnv('MARKET_SCAN_INTERVAL_SECONDS', 300),
+    maxSignalsPerHour: numberEnv('MAX_SIGNALS_PER_HOUR', 3),
+    cooldownMinutes: numberEnv('SIGNAL_COOLDOWN_MINUTES', 30),
   },
   commissions: {
     stockFeePercent: numberEnv('BCS_STOCK_FEE_PERCENT', 0.04),

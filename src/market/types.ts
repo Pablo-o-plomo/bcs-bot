@@ -36,4 +36,10 @@ export interface ScannerSignal {
   volatility: number | null;
   commissionRub: number;
   momentum: number;
+  emaTrend: ScannerTrend;
+  rsi: number;
+  atrPercent: number;
+  support: number | null;
+  resistance: number | null;
+  breakout: boolean;
 }

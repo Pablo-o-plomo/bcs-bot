@@ -37,6 +37,12 @@ function buildSignal(item: MarketInstrument, indexChange: number): ScannerSignal
   const momentum = Math.max(-10, Math.min(10, change - indexChange));
   const trend = trendFromChange(change, indexChange);
   const risk = riskFrom(volatility, liquidityScore, trend);
+  const emaTrend = trend;
+  const rsi = estimateRsi(change, volatility);
+  const atrPercent = Math.max(0.4, volatility || Math.abs(change) || 0.8);
+  const support = item.lastPrice === null ? null : item.lastPrice * (1 - atrPercent / 100);
+  const resistance = item.lastPrice === null ? null : item.lastPrice * (1 + atrPercent / 100);
+  const breakout = change >= 2.2 || (item.lastPrice !== null && resistance !== null && item.lastPrice >= resistance * 0.995);
   const confidence = scoreConfidence(change, indexChange, volatility, liquidityScore, risk);
   const action = actionFrom(trend, confidence, risk);
   const commissionRub = estimateCommission(item);
@@ -44,10 +50,10 @@ function buildSignal(item: MarketInstrument, indexChange: number): ScannerSignal
   if (change > indexChange + 0.8) reasons.push('сильнее индекса');
   if (volume > 2_000_000_000 || (['Si', 'BR', 'GOLD'].includes(item.ticker) && volume > 300_000)) reasons.push('рост объема');
   if (Math.abs(change) >= 1.5) reasons.push('импульс');
-  if (change >= 2.2) reasons.push('возможный пробой');
+  if (breakout) reasons.push('пробой локального уровня');
   if (volatility >= 2) reasons.push('повышенная волатильность');
   if (!reasons.length) reasons.push(trend === 'neutral' ? 'нет явного импульса' : 'направленное движение');
-  return { ticker: item.ticker, changePercent: item.changePercent, volume: item.volume, reasons, trend, action, confidence, risk, liquidityScore, volatility, commissionRub, momentum };
+  return { ticker: item.ticker, changePercent: item.changePercent, volume: item.volume, reasons, trend, action, confidence, risk, liquidityScore, volatility, commissionRub, momentum, emaTrend, rsi, atrPercent, support, resistance, breakout };
 }
 
 function compareByMode(a: MarketInstrument, b: MarketInstrument, mode: TopListMode): number {
@@ -77,6 +83,10 @@ function actionFrom(trend: ScannerTrend, confidence: number, risk: ScannerRisk):
   if (trend === 'bullish' && confidence >= 7) return 'LONG';
   if (trend === 'bearish' && confidence >= 7) return 'SHORT';
   return 'WATCH';
+}
+
+function estimateRsi(change: number, volatility: number): number {
+  return Math.max(15, Math.min(85, Math.round(50 + change * 8 + volatility * 1.5)));
 }
 
 function scoreLiquidity(volume: number, market: string): number {

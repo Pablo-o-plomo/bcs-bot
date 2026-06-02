@@ -734,6 +734,8 @@ RR: <b>1:${idea.rr.toFixed(1)}</b>
 
 Уверенность AI: <b>${idea.signal.confidence.toFixed(1)}/10</b>
 
+Статус: <b>ручное подтверждение</b>
+
 TP1 ✅ · TP2 ⏳ · TP3 ❌
 
 ⚠️ <i>Это не инвестиционная рекомендация.</i>`;
@@ -744,7 +746,7 @@ async function buildBestSignalIdea(): Promise<SignalIdea | null> {
   const ideas = signals
     .map(signal => buildSignalIdea(signal, findMarketInstrument(snapshot.instruments, signal.ticker)))
     .filter((idea): idea is SignalIdea => Boolean(idea))
-    .filter(idea => idea.rr >= 1.5 && idea.expectedNetPercent > 0.2)
+    .filter(idea => idea.rr >= 1.8 && idea.expectedNetPercent > 0.2 && idea.signal.confidence >= config.trading.minSignalConfidence)
     .sort((a, b) => b.signal.confidence - a.signal.confidence);
   return ideas.find(idea => idea.direction === 'LONG') ?? ideas[0] ?? null;
 }
@@ -753,7 +755,7 @@ function buildSignalIdea(signal: ScannerSignal, instrument?: MarketInstrument): 
   if (!instrument?.lastPrice || signal.action === 'SKIP') return null;
   const direction = signal.action === 'SHORT' ? 'SHORT' : signal.action === 'LONG' ? 'LONG' : signal.trend === 'bearish' ? 'SHORT' : 'LONG';
   const entry = instrument.lastPrice;
-  const levels = buildSignalLevels(entry, direction);
+  const levels = buildSignalLevels(entry, direction, signal.atrPercent);
   const riskPerUnit = Math.abs(entry - levels.sl);
   const profitPerUnit = Math.abs(levels.tp[0] - entry);
   if (riskPerUnit <= 0) return null;
@@ -768,27 +770,35 @@ async function buildSignalEnterScreen(telegramId: string): Promise<string> {
   const idea = await buildBestSignalIdea();
   if (!idea) return buildSignalSkipScreen();
   const settings = getUserSettings(telegramId);
-  const capital = plannedCapitalValue(settings.depositRub) ?? getLatestBcsPortfolioSnapshot()?.freeCash ?? 0;
-  const riskRub = capital * (settings.riskPerTrade / 100);
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  const availableCash = snapshot?.freeCash ?? plannedCapitalValue(settings.depositRub) ?? 0;
+  const riskRub = availableCash * (settings.riskPerTrade / 100);
   const stopDistance = Math.abs(idea.entry - idea.sl);
   const quantity = stopDistance > 0 ? Math.max(1, Math.floor(riskRub / stopDistance)) : 1;
   const volumeRub = quantity * idea.entry;
+  const potentialLoss = quantity * stopDistance;
   const commissionRub = volumeRub * (idea.commissionPercent / 100);
   const openPositions = getOpenTrades(telegramId).length;
   const todayLoss = getTodayTrades(telegramId).reduce((sum, trade) => sum + Math.min(0, Number(trade.pnl ?? 0)), 0);
   const checks = [
     openPositions < settings.maxOpenPositions ? '✅ лимит позиций' : '❌ лимит позиций',
-    Math.abs(todayLoss) <= capital * (settings.maxDailyLoss / 100) ? '✅ дневной лимит' : '❌ дневной лимит',
-    config.execution.mode === 'manual_confirm' ? '✅ ручное подтверждение' : `⚠️ режим: ${executionModeRu(config.execution.mode)}`,
-    config.allowOrderExecution && !config.readOnlyMode ? '⚠️ заявки разрешены env' : '✅ режим чтения',
+    Math.abs(todayLoss) <= availableCash * (settings.maxDailyLoss / 100) ? '✅ дневной лимит' : '❌ дневной лимит',
+    availableCash <= 0 || volumeRub <= availableCash ? '✅ денег достаточно' : '❌ денег недостаточно',
+    idea.rr >= 1.8 ? '✅ RR подходит' : '❌ RR слабый',
+    config.execution.mode === 'manual_confirm' ? '✅ заявка требует ручного подтверждения' : `⚠️ режим: ${executionModeRu(config.execution.mode)}`,
+    config.allowOrderExecution && !config.readOnlyMode ? '⚠️ заявки разрешены env' : '✅ режим наблюдения',
   ];
   return `✅ <b>Проверка сделки</b>
 
-Подтвердить покупку <b>${idea.signal.ticker}</b>?
-Объём: <b>${formatMoney(volumeRub)}</b>
+Инструмент: <b>${idea.signal.ticker}</b>
+Направление: <b>${idea.direction}</b>
+Объем: <b>${formatMoney(volumeRub)}</b>
+Количество: <b>${quantity} шт.</b>
 Риск: <b>${settings.riskPerTrade.toFixed(2)}%</b>
+Потенциальный убыток: <b>${formatMoney(potentialLoss)}</b>
 Комиссия: <b>~${formatMoney(commissionRub)}</b>
 
+Проверки:
 ${checks.join('\n')}
 
 Заявка пока <b>не отправлена</b>.`;
@@ -1094,6 +1104,27 @@ async function buildRealPortfolio(telegramId: string): Promise<string> {
 
 
 
+async function buildMenuLimitsScreen(telegramId: string): Promise<string> {
+  if (!config.bcsApi.enabled) return buildUiScreen('💰 <b>Остатки</b>', 'BCS API', 'BCS API отключен.', new Date().toISOString(), false);
+  try {
+    const limits = await bcsApiClient.getLimits();
+    const body = limits.cash.length ? formatCashBalances(limits.cash) : 'BCS API вернул limits, но денежные остатки не найдены. Выполните /debug_limits.';
+    return buildUiScreen('💰 <b>Остатки</b>', 'BCS API limits', body, limits.updatedAt, false);
+  } catch (err: any) {
+    logger.warn(`Menu limits BCS fallback: ${err.message}`);
+    return buildUiScreen('💰 <b>Остатки</b>', 'Локальные данные', `⚠️ BCS API временно недоступен
+Показываю локальные данные.
+
+${err.message}`, new Date().toISOString(), false);
+  }
+}
+
+async function buildRealPortfolio(telegramId: string): Promise<string> {
+  return buildMenuPortfolioScreen(telegramId);
+}
+
+
+
 
 async function buildLimits(telegramId: string): Promise<string> {
   if (!config.bcsApi.enabled) return '💵 <b>Остатки</b>\n\nBCS API отключен.';
@@ -1252,11 +1283,13 @@ function pickBestSignal(signals: ScannerSignal[]): ScannerSignal | undefined {
     .sort((a, b) => b.confidence - a.confidence)[0] ?? signals.sort((a, b) => b.confidence - a.confidence)[0];
 }
 
-function buildSignalLevels(entry: number, action: string): { tp: number[]; sl: number } {
+function buildSignalLevels(entry: number, action: string, atrPercent = 1): { tp: number[]; sl: number } {
   if (!entry) return { tp: [0, 0, 0], sl: 0 };
   const direction = action === 'SHORT' ? -1 : 1;
-  const tp = [0.018, 0.032, 0.052].map(step => entry * (1 + direction * step));
-  const sl = entry * (1 - direction * 0.009);
+  const stopPercent = Math.max(0.9, Math.min(2.4, atrPercent));
+  const targetPercents = [stopPercent * 1.9, stopPercent * 2.7, stopPercent * 3.8];
+  const tp = targetPercents.map(step => entry * (1 + direction * (step / 100)));
+  const sl = entry * (1 - direction * (stopPercent / 100));
   return { tp, sl };
 }
 
@@ -1597,6 +1630,13 @@ function chatId(msg: TelegramBot.Message): string { return msg.chat.id.toString(
 function fromId(msg: TelegramBot.Message): string { return msg.from?.id.toString() ?? msg.chat.id.toString(); }
 function escapeHtml(value: string): string { return value.replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] ?? ch)); }
 async function send(chat: string, text: string): Promise<void> { await bot.sendMessage(chat, text, { parse_mode: 'HTML', disable_web_page_preview: true }); }
+
+
+export async function sendAiSignalToAdmin(): Promise<void> {
+  const target = config.telegram.chatId || config.telegram.adminId;
+  if (!target || !bot) return;
+  await bot.sendMessage(target, await buildAiSignal(), { parse_mode: 'HTML', reply_markup: getMenuKeyboard('/ai_signal'), disable_web_page_preview: true });
+}
 
 export async function broadcastMessage(text: string): Promise<void> { const target = config.telegram.chatId || config.telegram.adminId; if (target) await send(target, text); }
 export async function sendAdminMessage(text: string): Promise<void> { if (config.telegram.adminId) await send(config.telegram.adminId, text); }

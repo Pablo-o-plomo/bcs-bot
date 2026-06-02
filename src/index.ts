@@ -5,7 +5,7 @@ import cron from 'node-cron';
 import express from 'express';
 import { config } from './config';
 import { initDb } from './database/db';
-import { initTelegramBot, sendAdminMessage, broadcastMessage } from './telegram/bot';
+import { initTelegramBot, sendAdminMessage, broadcastMessage, sendAiSignalToAdmin } from './telegram/bot';
 import { generateDailyReport } from './reports/dailyReport';
 import { logger } from './utils/logger';
 import { BUILD_VERSION } from './version';
@@ -14,6 +14,7 @@ import { syncTrades } from './sync/tradeSync';
 import { syncPositions } from './sync/positionSync';
 import { bcsApiClient } from './broker/bcs/client';
 import { sanitizeSecret } from './broker/bcs/errors';
+import { startMarketSignalScheduler } from './market/signalScheduler';
 
 
 function maskAccountId(accountId: string): string {
@@ -56,6 +57,7 @@ async function bootstrap(): Promise<void> {
   await bcsApiClient.connect();
   await pingBcsApiOnStartup();
   initTelegramBot();
+  startMarketSignalScheduler(sendAiSignalToAdmin);
 
   const app = express();
   app.get('/health', (_, res) => res.json({
