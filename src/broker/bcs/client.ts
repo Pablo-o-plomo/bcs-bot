@@ -13,6 +13,7 @@ import type { BcsApiStatus, BcsInstrument, BcsLimits, BcsMarketData, BcsMoneySum
 
 type RequestMethod = 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH';
 
+
 export class BcsApiClient {
   readonly baseUrl = config.bcsApi.baseUrl;
   private status: BcsApiStatus = this.initialStatus();
@@ -66,14 +67,14 @@ export class BcsApiClient {
           attempt += 1;
           continue;
         }
-        const retryable = apiError.statusCode === 429 || (apiError.statusCode !== undefined && apiError.statusCode >= 500) || err?.code === 'ECONNABORTED';
+        const retryable = isRetryableBcsError(apiError.statusCode, err);
         if (!retryable || attempt >= config.bcsApi.maxRetries) {
           this.status = { ...this.getStatus(), connected: false, lastCheckedAt: new Date().toISOString(), lastError: apiError.message };
           logger.error(`BCS API error: ${apiError.message}`);
           throw apiError;
         }
-        const delay = apiError.statusCode === 429 ? (apiError.retryAfter ? apiError.retryAfter * 1000 : 1500 * (attempt + 1)) : 500 * (attempt + 1);
-        logger.warn(`BCS API retry: attempt=${attempt + 1}, status=${apiError.statusCode ?? 'network'}, delayMs=${delay}`);
+        const delay = retryDelayMs(attempt, apiError.retryAfter);
+        logger.warn(`BCS API retry: attempt=${attempt + 1}, status=${apiError.statusCode ?? err?.code ?? 'network'}, delayMs=${delay}`);
         await new Promise(resolve => setTimeout(resolve, delay));
         attempt += 1;
       }
@@ -106,10 +107,23 @@ export class BcsApiClient {
 
 export const bcsApiClient = new BcsApiClient();
 
+
+function isRetryableBcsError(statusCode: number | undefined, err: any): boolean {
+  const retryableCodes = new Set(['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN', 'EPROTO', 'ERR_TLS_CERT_ALTNAME_INVALID', 'ERR_SSL_WRONG_VERSION_NUMBER', 'ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE']);
+  return statusCode === 429 || (statusCode !== undefined && statusCode >= 500) || retryableCodes.has(err?.code) || /TLS|SSL|socket|timeout/i.test(String(err?.message ?? ''));
+}
+
+function retryDelayMs(attempt: number, retryAfter?: number): number {
+  if (retryAfter) return Math.min(20000, retryAfter * 1000);
+  const base = 500 * 2 ** attempt;
+  const jitter = Math.floor(Math.random() * 250);
+  return Math.min(20000, base + jitter);
+}
+
 function throwReadOnly(): never {
-  if (config.readOnlyMode) throw new BcsReadOnlyError('READ ONLY MODE ENABLED');
-  if (!config.allowOrderExecution) throw new Error('Order execution disabled');
-  throw new Error('Order execution disabled');
+  if (config.readOnlyMode) throw new BcsReadOnlyError('Режим чтения включен');
+  if (!config.allowOrderExecution) throw new Error('Заявки отключены');
+  throw new Error('Заявки отключены');
 }
 
 function redactUrl(url: string): string { return sanitizeSecret(url); }
