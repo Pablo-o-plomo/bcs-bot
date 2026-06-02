@@ -75,7 +75,7 @@ function buildSummary(code: MarketStateCode, sessionLabel: string): string {
   if (code === 'ACTIVE_BULL') return `Сейчас рынок активный (${sessionLabel}). Подходит для intraday-наблюдения, но входы только после подтверждения объема и уровня.`;
   if (code === 'ACTIVE_BEAR') return `Рынок под давлением (${sessionLabel}). Лучше снижать риск и ждать подтверждения разворота.`;
   if (code === 'HIGH_VOLATILITY') return `Волатильность повышена (${sessionLabel}). Размер позиции и стоп должны быть консервативными.`;
-  if (code === 'RISK_OFF') return `Risk-off фон (${sessionLabel}). Приоритет — защита капитала и paper-сценарии.`;
+  if (code === 'RISK_OFF') return `Risk-off фон (${sessionLabel}). Приоритет — защита капитала и тестовые сценарии.`;
   if (code === 'DEAD_MARKET') return `Активность низкая (${sessionLabel}). Лучше тестировать scanner и не форсировать сделки.`;
   return `Рынок без явного тренда (${sessionLabel}). Нужны подтверждения по объему и направлению индекса.`;
 }

@@ -83,7 +83,7 @@ export function setAdminCommandHandler(handler: CommandHandler): void {
 export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
   return {
     inline_keyboard: [
-      [{ text: '📊 Портфель', callback_data: 'portfolio_menu' }, { text: '📈 Рынок', callback_data: 'market_menu' }],
+      [{ text: '💼 Портфель', callback_data: 'portfolio_menu' }, { text: '📡 Рынок', callback_data: 'market_menu' }],
       [{ text: '🧠 AI Анализ', callback_data: 'ai_menu' }, { text: '⚠️ Риск', callback_data: 'risk_menu' }],
       [{ text: '📋 Отчеты', callback_data: 'reports_menu' }, { text: '⚙️ Настройки', callback_data: 'settings_menu' }],
     ],
@@ -102,7 +102,7 @@ export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions
   if (['/portfolio', '/limits', '/api_status', '/debug_limits', '/debug_portfolio'].includes(command)) return getBackHomeKeyboard('portfolio');
 
   if (command === '/submenu_market') return withHome([
-    [{ text: '📈 Обзор MOEX', callback_data: 'market_overview' }, { text: '🔥 Scanner', callback_data: 'market_scanner' }],
+    [{ text: '📈 Обзор MOEX', callback_data: 'market_overview' }, { text: '📡 Сканер рынка', callback_data: 'market_scanner' }],
     [{ text: '🟢 Лидеры роста', callback_data: 'market_top_gainers' }, { text: '🔴 Лидеры падения', callback_data: 'market_top_losers' }],
     [{ text: '📊 Объемы', callback_data: 'market_top_volume' }],
   ]);

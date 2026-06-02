@@ -16,6 +16,7 @@ import { getMoexSecurityData, formatMoexAnalysis } from '../market/moexClient';
 import { getMarketSnapshot } from '../market/moex';
 import { scanMarket, getTopList } from '../market/scanner';
 import { formatMarketOverview, formatScanner, formatTopList } from '../market/formatter';
+import { buildAiDashboardChartUrl, buildEquityCurveChartUrl, buildMarketHeatmapChartUrl, buildMiniCandlesChartUrl, buildPortfolioDashboardChartUrl } from '../charts/quickchart';
 import type { TopListMode } from '../market/types';
 import { reviewTrade } from '../ai/tradeReview';
 import { analyzeDeal, analyzeMarket, analyzePortfolio } from '../ai/analyzer';
@@ -134,11 +135,10 @@ function buildWelcomeScreen(): string {
   logger.info('ux_terms_normalized');
   return `🤖 <b>BCS Assistant</b>
 
-━━━━━━━━━━━━━━
-Режим: <b>Только просмотр</b>
-Заявки: <b>отключены</b>
-Автоторговля: <b>отключена</b>
-━━━━━━━━━━━━━━
+🛡 <b>Только просмотр</b> · заявки отключены
+🧠 AI terminal · MOEX · BCS API
+
+💼 Портфель  📡 Рынок  ⚠️ Риск
 
 Выберите раздел:`;
 }
@@ -146,7 +146,10 @@ function buildWelcomeScreen(): string {
 async function handleCommand(chatIdValue: string, command: string, telegramId = chatIdValue, menuMessageId?: number): Promise<void> {
   ensureUser(telegramId);
   if (menuMessageId) return renderMenuScreen(chatIdValue, menuMessageId, command, telegramId);
-  if (command === '/portfolio' || command === '/real_portfolio') return send(chatIdValue, await buildRealPortfolio(telegramId));
+  if (command === '/portfolio' || command === '/real_portfolio') {
+    await send(chatIdValue, await buildRealPortfolio(telegramId));
+    return sendPortfolioCharts(chatIdValue);
+  }
   if (command === '/add_trade') return startAddTrade(chatIdValue, telegramId);
   if (command === '/analyze_instrument') return requestInstrument(chatIdValue, telegramId);
   if (command === '/ai_review') return requestAiReview(chatIdValue, telegramId);
@@ -165,8 +168,14 @@ async function handleCommand(chatIdValue: string, command: string, telegramId = 
   if (command === '/ai_market' || command === '/ai_market_summary') return send(chatIdValue, await buildAiMarketAnalysis());
   if (command === '/ai_risk') return send(chatIdValue, await buildAiRiskAnalysis(telegramId));
   if (command === '/ai_deal' || command === '/ai_trade') return send(chatIdValue, buildAiDealPrompt(telegramId));
-  if (command === '/market') return send(chatIdValue, await buildMarketOverview());
-  if (command === '/scanner') return send(chatIdValue, await buildMarketScanner());
+  if (command === '/market') {
+    await send(chatIdValue, await buildMarketOverview());
+    return sendMarketCharts(chatIdValue, 'market');
+  }
+  if (command === '/scanner') {
+    await send(chatIdValue, await buildMarketScanner());
+    return sendMarketCharts(chatIdValue, 'scanner');
+  }
   if (command === '/top_gainers') return send(chatIdValue, await buildMarketTop('gainers'));
   if (command === '/top_losers') return send(chatIdValue, await buildMarketTop('losers'));
   if (command === '/top_volume') return send(chatIdValue, await buildMarketTop('volume'));
@@ -219,9 +228,9 @@ async function renderMenuScreen(chatIdValue: string, messageId: number, command:
 
 async function buildMenuScreenText(command: string, telegramId: string): Promise<string> {
   logMenuCommandReuse(command);
-  if (command === '/submenu_portfolio') return buildSubmenuScreen('📊 <b>Портфель</b>', 'Выберите данные по счету BCS или debug-раздел.');
+  if (command === '/submenu_portfolio') return buildSubmenuScreen('💼 <b>Портфель</b>', 'Выберите данные по счету BCS или debug-раздел.');
   if (command === '/submenu_debug') return buildSubmenuScreen('🧪 <b>Debug</b>', 'Диагностика raw-ответов BCS API. Раздел скрыт из главного меню.');
-  if (command === '/submenu_market') return buildSubmenuScreen('📈 <b>Рынок</b>', 'MOEX-обзор, сканер и лидерборды рынка.');
+  if (command === '/submenu_market') return buildSubmenuScreen('📡 <b>Рынок</b>', 'MOEX-обзор, сканер и лидерборды рынка.');
   if (command === '/submenu_ai') return buildSubmenuScreen('🧠 <b>AI Анализ</b>', 'AI-разборы портфеля, сделок, риска и рынка.');
   if (command === '/submenu_risk' || command === '/risk_menu') return buildSubmenuScreen('⚠️ <b>Риск</b>', 'Статус риска, тестовый режим, режим заявок, аварийная остановка и риск-настройки.');
   if (command === '/submenu_reports') return buildSubmenuScreen('📋 <b>Отчеты</b>', 'Дневник сделок, дневные/месячные отчеты, комиссии и экспорт.');
@@ -801,41 +810,96 @@ async function buildMenuPortfolioScreen(telegramId: string): Promise<string> {
   if (config.bcsApi.enabled) {
     try {
       const portfolio = await bcsApiClient.getPortfolio();
-      const moneyLines = formatCashBalances(portfolio.money.cash);
-      const positionBlock = formatBcsPortfolioPositions(portfolio.positions, portfolio.money.cash.length > 0);
-      const body = `Баланс: <b>${formatRub(portfolio.money.balance)}</b>
-Свободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>
-Стоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>
-Дневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>
-Общий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>
-
-💰 <b>Деньги:</b>
-${moneyLines}
-
-${positionBlock}`;
-      return buildUiScreen('📊 <b>Портфель</b>', 'BCS API', body, portfolio.updatedAt);
+      return buildPremiumPortfolioCard({
+        balance: portfolio.money.balance,
+        freeCash: portfolio.money.freeCash,
+        portfolioValue: portfolio.money.portfolioValue,
+        dayPnl: portfolio.money.dayPnl,
+        totalPnl: portfolio.money.totalPnl,
+        positions: portfolio.positions.map(position => ({
+          ticker: position.ticker,
+          name: position.name,
+          quantity: position.quantity,
+          currentPrice: position.currentPrice,
+          currentValueRub: position.currentValueRub ?? position.currentPrice * position.quantity,
+          dailyPL: position.dailyPL ?? 0,
+          dailyPercentPL: position.dailyPercentPL ?? 0,
+          unrealizedPnl: position.unrealizedPL ?? position.unrealizedPnl,
+        })),
+        source: 'BCS API',
+        updatedAt: portfolio.updatedAt,
+      });
     } catch (err: any) {
       logger.warn(`Menu portfolio BCS fallback: ${err.message}`);
     }
   }
 
-  const fallbackPrefix = config.bcsApi.enabled ? '⚠️ BCS API временно недоступен\nПоказываю локальные данные.\n\n' : '';
   const snapshot = getLatestBcsPortfolioSnapshot();
   const positions = getBcsPositions();
   if (snapshot) {
-    const lines = positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)}`).join('\n') || 'нет данных';
-    const body = `${fallbackPrefix}Баланс: <b>${formatRub(snapshot.balance)}</b>
-Свободные средства: <b>${formatRub(snapshot.freeCash)}</b>
-Стоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>
-Дневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>
-Общий P&L: <b>${formatRub(snapshot.totalPnl)}</b>
-
-Позиции:
-${lines}`;
-    return buildUiScreen('📊 <b>Портфель</b>', 'BCS API (последний sync)', body, snapshot.syncedAt ?? new Date().toISOString());
+    const prefix = config.bcsApi.enabled ? '⚠️ BCS API долго отвечает. Показываю локальный snapshot.\n\n' : '';
+    return `${prefix}${buildPremiumPortfolioCard({
+      balance: snapshot.balance,
+      freeCash: snapshot.freeCash,
+      portfolioValue: snapshot.portfolioValue,
+      dayPnl: snapshot.dayPnl,
+      totalPnl: snapshot.totalPnl,
+      positions: positions.map(position => ({
+        ticker: position.ticker,
+        quantity: position.quantity,
+        currentPrice: position.currentPrice,
+        currentValueRub: position.currentPrice * position.quantity,
+        dailyPL: 0,
+        dailyPercentPL: 0,
+        unrealizedPnl: position.unrealizedPnl,
+      })),
+      source: 'BCS API · local sync',
+      updatedAt: snapshot.syncedAt ?? new Date().toISOString(),
+    })}`;
   }
-  return buildUiScreen('📊 <b>Портфель</b>', 'Локальная база', `${fallbackPrefix}${buildPortfolio(telegramId)}`);
+  return buildUiScreen('💼 <b>ПОРТФЕЛЬ</b>', 'Локальная база', buildPortfolio(telegramId), new Date().toISOString());
 }
+
+interface PortfolioCardInput {
+  balance: number;
+  freeCash: number;
+  portfolioValue: number;
+  dayPnl: number;
+  totalPnl: number;
+  positions: Array<{ ticker: string; name?: string; quantity: number; currentPrice: number; currentValueRub: number; dailyPL: number; dailyPercentPL: number; unrealizedPnl: number }>;
+  source: string;
+  updatedAt: string;
+}
+
+function buildPremiumPortfolioCard(input: PortfolioCardInput): string {
+  const positionsValue = input.positions.reduce((sum, position) => sum + position.currentValueRub, 0);
+  const cashShare = input.balance > 0 ? input.freeCash / input.balance : 1;
+  const risk = cashShare > 0.5 || positionsValue === 0 ? 'низкий' : input.positions.length > config.trading.maxOpenPositions ? 'повышенный' : 'средний';
+  const best = [...input.positions].sort((a, b) => b.dailyPercentPL - a.dailyPercentPL)[0];
+  const positionsBlock = input.positions.length
+    ? input.positions.slice(0, 6).map(position => `• <b>${position.ticker}</b> ${valueEmoji(position.dailyPercentPL)} ${position.dailyPercentPL > 0 ? '+' : ''}${position.dailyPercentPL.toFixed(1)}% · ${formatMoney(position.currentValueRub)}`).join('\n')
+    : '• нет бумаг — только денежный остаток';
+  const aiLine = input.positions.length
+    ? 'Рынок оцениваю через scanner: следите за объемом, импульсом и долей кэша.'
+    : 'В портфеле только кэш. Режим наблюдения и тестовые сценарии — безопасный следующий шаг.';
+  return `💼 <b>ПОРТФЕЛЬ</b>
+
+${valueEmoji(input.balance)} Баланс: <b>${formatMoney(input.balance)}</b>
+${valueEmoji(input.dayPnl)} Сегодня: <b>${formatSignedMoney(input.dayPnl)}</b>${input.balance ? ` (${((input.dayPnl / input.balance) * 100).toFixed(2)}%)` : ''}
+💰 Свободно: <b>${formatMoney(input.freeCash)}</b>
+🔥 Лучший актив: <b>${best ? `${best.ticker} ${best.dailyPercentPL > 0 ? '+' : ''}${best.dailyPercentPL.toFixed(1)}%` : 'нет данных'}</b>
+${riskEmoji(risk)} Риск: <b>${risk}</b>
+
+📦 <b>Позиции</b>
+${positionsBlock}
+
+🧠 <b>AI</b>
+${aiLine}
+
+▫️ <i>${input.source}</i> · ${formatTime(input.updatedAt)}
+⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+}
+
 
 async function buildMenuLimitsScreen(telegramId: string): Promise<string> {
   if (!config.bcsApi.enabled) return buildUiScreen('💰 <b>Остатки</b>', 'BCS API', 'BCS API отключен.', new Date().toISOString(), false);
@@ -853,39 +917,9 @@ ${err.message}`, new Date().toISOString(), false);
 }
 
 async function buildRealPortfolio(telegramId: string): Promise<string> {
-  if (config.bcsApi.enabled) {
-    try {
-      const portfolio = await bcsApiClient.getPortfolio();
-      const moneyLines = formatCashBalances(portfolio.money.cash);
-      const positionBlock = formatBcsPortfolioPositions(portfolio.positions, portfolio.money.cash.length > 0);
-      return `📊 <b>Реальный портфель</b>
-Источник: <b>БКС API</b>
-
-Баланс: <b>${formatRub(portfolio.money.balance)}</b>
-Свободные средства: <b>${formatRub(portfolio.money.freeCash)}</b>
-Стоимость портфеля: <b>${formatRub(portfolio.money.portfolioValue)}</b>
-Дневной P&L: <b>${formatRub(portfolio.money.dayPnl)}</b>
-Общий P&L: <b>${formatRub(portfolio.money.totalPnl)}</b>
-
-💰 <b>Деньги:</b>
-${moneyLines}
-
-${positionBlock}
-
-⚠️ <i>Это не инвестиционная рекомендация.</i>`;
-    } catch (err: any) {
-      logger.warn(`Real portfolio fallback: ${err.message}`);
-    }
-  }
-  const fallbackNotice = config.bcsApi.enabled ? '⚠️ BCS API временно недоступен\nПоказываю локальные данные.\n\n' : '';
-  const snapshot = getLatestBcsPortfolioSnapshot();
-  const positions = getBcsPositions();
-  if (snapshot) {
-    const lines = positions.map(p => `• ${p.ticker}: ${p.quantity} шт. | ср. ${p.averagePrice.toFixed(2)} | тек. ${p.currentPrice.toFixed(2)} | P&L ${formatRub(p.unrealizedPnl)} | доля ${p.portfolioSharePercent.toFixed(1)}%`).join('\n');
-    return `${fallbackNotice}📊 <b>Реальный портфель</b>\nИсточник: <b>БКС API (последний sync)</b>\n\nБаланс: <b>${formatRub(snapshot.balance)}</b>\nСвободные средства: <b>${formatRub(snapshot.freeCash)}</b>\nСтоимость портфеля: <b>${formatRub(snapshot.portfolioValue)}</b>\nДневной P&L: <b>${formatRub(snapshot.dayPnl)}</b>\nОбщий P&L: <b>${formatRub(snapshot.totalPnl)}</b>\n\nПозиции:\n${lines || 'нет данных'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
-  }
-  return `${fallbackNotice}${buildApiStatus()}\n\n${buildPortfolio(telegramId)}`;
+  return buildMenuPortfolioScreen(telegramId);
 }
+
 
 
 async function buildLimits(telegramId: string): Promise<string> {
@@ -983,6 +1017,32 @@ function formatNumber(value: number): string {
   return value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatMoney(value: number): string {
+  return `${formatNumber(value)} ₽`;
+}
+
+function formatSignedMoney(value: number): string {
+  return `${value > 0 ? '+' : ''}${formatNumber(value)} ₽`;
+}
+
+function valueEmoji(value: number): string {
+  if (value > 0) return '🟢';
+  if (value < 0) return '🔴';
+  return '⚪';
+}
+
+function riskEmoji(level: string): string {
+  if (level === 'низкий') return '🟢';
+  if (level === 'высокий' || level === 'повышенный') return '🔴';
+  return '🟡';
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 
 function plannedCapitalValue(value: number): number | null {
   return value > 0 && value !== 300000 ? value : null;
@@ -1002,13 +1062,12 @@ function executionModeRu(mode: string): string {
 
 
 function buildUiScreen(title: string, source: string, body: string, updatedAt = new Date().toISOString(), showDisclaimer = true): string {
+  const disclaimer = showDisclaimer ? '\n⚠️ <i>Это не инвестиционная рекомендация.</i>' : '';
   return `${title}
-━━━━━━━━━━━━━━
-Источник: <b>${source}</b>
-Обновлено: <b>${updatedAt}</b>
-━━━━━━━━━━━━━━
 
-${body}${showDisclaimer ? '\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>' : ''}`;
+${body}
+
+▫️ <i>${source}</i> · ${formatTime(updatedAt)}${disclaimer}`;
 }
 
 function buildSectionInDevelopment(): string {
@@ -1016,9 +1075,9 @@ function buildSectionInDevelopment(): string {
 }
 
 function buildSubmenuScreen(title: string, body: string): string {
-  return buildUiScreen(title, 'BCS Assistant Bot', `${body}
+  return buildUiScreen(title, 'BCS Assistant', `${body}
 
-Выберите действие кнопками ниже.`, new Date().toISOString(), false);
+🕹 Выберите действие кнопками ниже.`, new Date().toISOString(), false);
 }
 
 function buildAiSectionInDevelopment(): string {
@@ -1228,6 +1287,46 @@ async function handleTradeDetails(chat: string, id: number): Promise<void> {
   if (!id) return send(chat, 'Укажите ID сделки: /trade 123');
   const t = getTradeById(id);
   await send(chat, t ? `🧾 <b>Сделка #${t.id}</b>\n\n${t.ticker} ${t.direction}\nВход: ${t.entryPrice}\nСтоп: ${t.stopLoss}\nТейк: ${t.takeProfit}\nКомиссия: ${t.commission}\nКомментарий: ${t.comment ?? '—'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>` : `Сделка #${id} не найдена.`);
+}
+
+async function sendPortfolioCharts(chat: string): Promise<void> {
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  if (!snapshot) return;
+  const positions = getBcsPositions().map(position => ({ ticker: position.ticker, valueRub: Number(position.currentPrice ?? 0) * Number(position.quantity ?? 0), pnlPercent: Number(position.portfolioSharePercent ?? 0) }));
+  await sendPhoto(chat, buildPortfolioDashboardChartUrl({ balance: snapshot.balance, freeCash: snapshot.freeCash, dayPnl: snapshot.dayPnl, totalPnl: snapshot.totalPnl, positions }), '💼 AI dashboard card');
+  const trades = getLastNTrades(30);
+  await sendPhoto(chat, buildEquityCurveChartUrl(buildEquityPoints(trades)), '📈 Equity curve');
+}
+
+async function sendMarketCharts(chat: string, mode: 'market' | 'scanner'): Promise<void> {
+  try {
+    const snapshot = await getMarketSnapshot();
+    if (mode === 'market') {
+      await sendPhoto(chat, buildMarketHeatmapChartUrl(snapshot.instruments), '🗺 MOEX heatmap');
+      await sendPhoto(chat, buildMiniCandlesChartUrl(snapshot.instruments), '🕯 Mini candles');
+      return;
+    }
+    const { signals } = await scanMarket();
+    await sendPhoto(chat, buildAiDashboardChartUrl(signals), '📡 AI scanner dashboard');
+  } catch (err: any) {
+    logger.warn(`chart_send_failed: ${err?.message ?? err}`);
+  }
+}
+
+async function sendPhoto(chat: string, url: string, caption: string): Promise<void> {
+  try {
+    await (bot as any).sendPhoto(chat, url, { caption, parse_mode: 'HTML' });
+  } catch (err: any) {
+    logger.warn(`chart_send_failed: ${err?.message ?? err}`);
+  }
+}
+
+function buildEquityPoints(trades: Array<{ pnl?: number; closedAt?: string; createdAt: string }>): Array<{ label: string; value: number }> {
+  let equity = 0;
+  return trades.slice().reverse().map((trade, index) => {
+    equity += Number(trade.pnl ?? 0);
+    return { label: trade.closedAt?.slice(5, 10) ?? trade.createdAt?.slice(5, 10) ?? `${index + 1}`, value: Number(equity.toFixed(2)) };
+  });
 }
 
 function parseTradeLine(telegramId: string, text: string): Partial<TradeInput> | null {
