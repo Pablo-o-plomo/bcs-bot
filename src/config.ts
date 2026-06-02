@@ -59,7 +59,7 @@ export const config = {
     apiKey: optionalEnv('OPENAI_API_KEY', ''),
   },
   trading: {
-    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 300000),
+    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 0),
     riskPerTrade: numberEnv('RISK_PER_TRADE', numberEnv('DEFAULT_RISK_PER_TRADE', 1)),
     maxDailyLoss: numberEnv('MAX_DAILY_LOSS', 3),
     maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 5),
