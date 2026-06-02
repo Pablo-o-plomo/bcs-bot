@@ -3,10 +3,12 @@ import { logger } from '../utils/logger';
 import { getMarketSnapshot } from './moex';
 import type { MarketInstrument, MarketSnapshot, ScannerAction, ScannerRisk, ScannerSignal, ScannerTrend, TopListMode } from './types';
 
+const AI_SIGNAL_SYMBOLS = ['SBER', 'GAZP', 'LKOH', 'ROSN', 'IMOEX', 'Si', 'BR', 'GOLD'];
+
 export async function scanMarket(): Promise<{ snapshot: MarketSnapshot; signals: ScannerSignal[] }> {
   logger.info('market_scan_started');
   const snapshot = await getMarketSnapshot();
-  const allowed = new Set(config.execution.allowedSymbols.map(symbol => normalizeTicker(symbol)));
+  const allowed = new Set([...AI_SIGNAL_SYMBOLS, ...config.execution.allowedSymbols].map(symbol => normalizeTicker(symbol)));
   const indexChange = snapshot.instruments.find(item => normalizeTicker(item.ticker) === 'IMOEX')?.changePercent ?? 0;
   const signals = snapshot.instruments
     .filter(item => normalizeTicker(item.ticker) !== 'IMOEX')

@@ -6,7 +6,8 @@ export const callbacks: Record<string, string> = {
   portfolio_menu: '/portfolio',
   ai_signal: '/ai_signal',
   market_menu: '/market',
-  settings_menu: '/settings',
+  settings_menu: '/risk',
+  risk_core: '/risk',
 
   real_portfolio: '/portfolio',
   limits: '/limits',
@@ -38,6 +39,8 @@ export const callbacks: Record<string, string> = {
   ai_market_summary: '/ai_market',
   signal_enter: '/signal_enter',
   signal_skip: '/signal_skip',
+  signal_confirm: '/signal_confirm',
+  signal_cancel: '/signal_cancel',
 
   risk: '/risk',
   risk_menu: '/risk',
@@ -68,9 +71,9 @@ export const callbacks: Record<string, string> = {
   menu_back_portfolio: '/portfolio',
   menu_back_market: '/market',
   menu_back_ai: '/ai_signal',
-  menu_back_risk: '/settings',
-  menu_back_reports: '/settings',
-  menu_back_settings: '/settings',
+  menu_back_risk: '/risk',
+  menu_back_reports: '/risk',
+  menu_back_settings: '/risk',
   menu_back_main: '/menu',
   menu_back: '/menu',
   menu_home: '/menu',
@@ -86,18 +89,8 @@ export function setAdminCommandHandler(handler: CommandHandler): void {
 export function getMainKeyboard(): TelegramBot.SendMessageOptions['reply_markup'] {
   return {
     inline_keyboard: [
-      [{ text: '💼 Портфель', callback_data: 'portfolio_menu' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }],
-      [{ text: '📈 Рынок', callback_data: 'market_menu' }, { text: '⚙️ Настройки', callback_data: 'settings_menu' }],
-    ],
-  };
-}
-
-export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions['reply_markup'] {
-  if (command === '/menu') return getMainKeyboard();
-  if (command === '/ai_signal') return {
-    inline_keyboard: [
-      [{ text: '✅ Войти', callback_data: 'signal_enter' }, { text: '❌ Пропустить', callback_data: 'signal_skip' }],
-      [{ text: '🔄 Новый сигнал', callback_data: 'ai_signal' }, { text: '🏠 Главное меню', callback_data: 'menu_home' }],
+      [{ text: '📊 Рынок', callback_data: 'market_menu' }, { text: '🧠 AI Сигнал', callback_data: 'ai_signal' }],
+      [{ text: '💼 Портфель', callback_data: 'portfolio_menu' }, { text: '⚙️ Риск', callback_data: 'risk_core' }],
     ],
   };
   if (command === '/settings') return {
@@ -111,6 +104,44 @@ export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions
   if (command === '/portfolio') return withHome([[{ text: '🔄 Обновить', callback_data: 'real_portfolio' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }]]);
   if (['/signal_enter', '/signal_skip'].includes(command)) return withHome([[{ text: '📡 Новый сигнал', callback_data: 'ai_signal' }]]);
   if (['/set_deposit', '/set_risk', '/execution', '/execution_mode', '/api_status'].includes(command)) return withBackHome('settings');
+
+  // Legacy hidden flows remain available through commands/callback aliases, but not from the main UI.
+  if (command === '/submenu_debug') return withBackHome('portfolio', [
+    [{ text: '🔎 Debug limits', callback_data: 'debug_limits' }, { text: '🔎 Debug portfolio', callback_data: 'debug_portfolio' }],
+  ]);
+  if (['/limits', '/debug_limits', '/debug_portfolio'].includes(command)) return getBackHomeKeyboard('portfolio');
+  if (['/scanner', '/top_gainers', '/top_losers', '/top_volume', '/ai_market', '/ai_market_summary'].includes(command)) return getBackHomeKeyboard('market');
+  if (['/ai_portfolio', '/ai_deal', '/ai_trade', '/ai_risk'].includes(command)) return getBackHomeKeyboard('ai');
+  if (['/risk_status', '/paper', '/paper_mode', '/emergency_stop', '/risk'].includes(command)) return getBackHomeKeyboard('settings');
+  if (['/journal', '/diary', '/daily_report', '/monthly_report', '/commissions', '/export', '/watchlist', '/help'].includes(command)) return getBackHomeKeyboard('settings');
+
+  return getMainKeyboard();
+}
+
+export function getNavigationKeyboard(parent: string = 'main'): TelegramBot.SendMessageOptions['reply_markup'] {
+  return getBackHomeKeyboard(parent);
+}
+
+export function getMenuKeyboard(command: string): TelegramBot.SendMessageOptions['reply_markup'] {
+  if (command === '/menu') return getMainKeyboard();
+  if (command === '/ai_signal') return {
+    inline_keyboard: [
+      [{ text: '✅ Купить', callback_data: 'signal_enter' }, { text: '❌ Пропустить', callback_data: 'signal_skip' }],
+      [{ text: '🔄 Новый сигнал', callback_data: 'ai_signal' }, { text: '🏠 Главное меню', callback_data: 'menu_home' }],
+    ],
+  };
+  if (command === '/settings' || command === '/risk') return {
+    inline_keyboard: [
+      [{ text: '📉 Риск', callback_data: 'set_risk' }, { text: '💵 Депозит', callback_data: 'set_deposit' }],
+      [{ text: '⚡ Режим', callback_data: 'execution_mode' }, { text: '🔌 API', callback_data: 'api_status' }],
+      [{ text: '🏠 Главное меню', callback_data: 'menu_home' }],
+    ],
+  };
+  if (command === '/market') return withHome([[{ text: '🔄 Обновить', callback_data: 'market_refresh' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }]]);
+  if (command === '/portfolio') return withHome([[{ text: '🔄 Обновить', callback_data: 'real_portfolio' }, { text: '📡 AI Сигнал', callback_data: 'ai_signal' }]]);
+  if (command === '/signal_enter') return { inline_keyboard: [[{ text: '✅ Подтвердить', callback_data: 'signal_confirm' }, { text: '❌ Отмена', callback_data: 'signal_cancel' }], [{ text: '🏠 Главное меню', callback_data: 'menu_home' }]] };
+  if (['/signal_skip', '/signal_confirm', '/signal_cancel'].includes(command)) return withHome([[{ text: '🧠 Новый сигнал', callback_data: 'ai_signal' }]]);
+  if (['/set_deposit', '/set_risk', '/execution', '/execution_mode', '/api_status'].includes(command)) return withBackHome('risk');
 
   // Legacy hidden flows remain available through commands/callback aliases, but not from the main UI.
   if (command === '/submenu_debug') return withBackHome('portfolio', [
@@ -155,22 +186,4 @@ export async function handleMenuCallback(query: TelegramBot.CallbackQuery): Prom
   if (data === 'menu_home') logger.info('navigation_home');
   logger.info(`callback_handled: ${data} -> ${command}`);
   await commandHandler(query.message?.chat.id.toString() ?? query.from.id.toString(), command, query.from.id.toString(), query.message?.message_id);
-}
-
-async function renderUnknownCallback(bot: TelegramBot, message: TelegramBot.Message): Promise<void> {
-  const text = `⚠️ <b>Неизвестная кнопка.</b>
-
-Вернитесь в главное меню.`;
-  try {
-    await bot.editMessageText(text, {
-      chat_id: message.chat.id,
-      message_id: message.message_id,
-      parse_mode: 'HTML',
-      reply_markup: getMainKeyboard(),
-      disable_web_page_preview: true,
-    });
-  } catch (err: any) {
-    logger.warn(`button_action_failed: unknown_callback_render: ${err?.message ?? err}`);
-    await bot.sendMessage(message.chat.id, text, { parse_mode: 'HTML', reply_markup: getMainKeyboard(), disable_web_page_preview: true });
-  }
 }
