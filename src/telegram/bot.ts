@@ -1532,6 +1532,46 @@ async function handleTradeDetails(chat: string, id: number): Promise<void> {
   await send(chat, t ? `🧾 <b>Сделка #${t.id}</b>\n\n${t.ticker} ${t.direction}\nВход: ${t.entryPrice}\nСтоп: ${t.stopLoss}\nТейк: ${t.takeProfit}\nКомиссия: ${t.commission}\nКомментарий: ${t.comment ?? '—'}\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>` : `Сделка #${id} не найдена.`);
 }
 
+async function sendPortfolioCharts(chat: string): Promise<void> {
+  const snapshot = getLatestBcsPortfolioSnapshot();
+  if (!snapshot) return;
+  const positions = getBcsPositions().map(position => ({ ticker: position.ticker, valueRub: Number(position.currentPrice ?? 0) * Number(position.quantity ?? 0), pnlPercent: Number(position.portfolioSharePercent ?? 0) }));
+  await sendPhoto(chat, buildPortfolioDashboardChartUrl({ balance: snapshot.balance, freeCash: snapshot.freeCash, dayPnl: snapshot.dayPnl, totalPnl: snapshot.totalPnl, positions }), '💼 AI dashboard card');
+  const trades = getLastNTrades(30);
+  await sendPhoto(chat, buildEquityCurveChartUrl(buildEquityPoints(trades)), '📈 Equity curve');
+}
+
+async function sendMarketCharts(chat: string, mode: 'market' | 'scanner'): Promise<void> {
+  try {
+    const snapshot = await getMarketSnapshot();
+    if (mode === 'market') {
+      await sendPhoto(chat, buildMarketHeatmapChartUrl(snapshot.instruments), '🗺 MOEX heatmap');
+      await sendPhoto(chat, buildMiniCandlesChartUrl(snapshot.instruments), '🕯 Mini candles');
+      return;
+    }
+    const { signals } = await scanMarket();
+    await sendPhoto(chat, buildAiDashboardChartUrl(signals), '📡 AI scanner dashboard');
+  } catch (err: any) {
+    logger.warn(`chart_send_failed: ${err?.message ?? err}`);
+  }
+}
+
+async function sendPhoto(chat: string, url: string, caption: string): Promise<void> {
+  try {
+    await (bot as any).sendPhoto(chat, url, { caption, parse_mode: 'HTML' });
+  } catch (err: any) {
+    logger.warn(`chart_send_failed: ${err?.message ?? err}`);
+  }
+}
+
+function buildEquityPoints(trades: Array<{ pnl?: number; closedAt?: string; createdAt: string }>): Array<{ label: string; value: number }> {
+  let equity = 0;
+  return trades.slice().reverse().map((trade, index) => {
+    equity += Number(trade.pnl ?? 0);
+    return { label: trade.closedAt?.slice(5, 10) ?? trade.createdAt?.slice(5, 10) ?? `${index + 1}`, value: Number(equity.toFixed(2)) };
+  });
+}
+
 function parseTradeLine(telegramId: string, text: string): Partial<TradeInput> | null {
   const user = ensureUser(telegramId);
   const parts = text.trim().split(/\s+/);
