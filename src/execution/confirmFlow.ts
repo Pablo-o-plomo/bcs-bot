@@ -1,5 +1,24 @@
 import type { ExecutionOrderRequest, ValidationResult } from './types';
 
 export function formatManualConfirm(order: ExecutionOrderRequest, validation: ValidationResult): string {
-  return `━━━━━━━━━━━━━━\n📈 <b>Сделка готова</b>\n━━━━━━━━━━━━━━\n\nИнструмент: <b>${order.symbol}</b>\nНаправление: <b>${order.direction}</b>\nЦена входа: <b>${order.entryPrice}</b>\nStop: <b>${order.stopLoss}</b>\nTake: <b>${order.takeProfit}</b>\nRR: <b>1:${order.rr.toFixed(2)}</b>\nРиск: <b>${order.riskPercent.toFixed(2)}%</b>\nКомиссия: <b>${order.commissionRub.toFixed(2)} ₽</b>\nSpread: <b>${order.spreadPercent === null || order.spreadPercent === undefined ? 'нет данных' : `${order.spreadPercent.toFixed(2)}%`}</b>\nLiquidity: <b>${order.liquidityOk === false ? 'низкая' : 'нормальная/нет данных'}</b>\nEstimated slippage: <b>${(order.slippageRub ?? 0).toFixed(2)} ₽</b>\n\n${validation.rejects.length ? `❌ Rejects:\n${validation.rejects.map(r => `• ${r}`).join('\n')}` : '✅ Risk gate passed'}\n${validation.warnings.length ? `\n⚠️ Warnings:\n${validation.warnings.map(w => `• ${w}`).join('\n')}` : ''}\n\n━━━━━━━━━━━━━━\n\nПодтвердить LIMIT заявку?\n\n⚠️ <i>Это не инвестиционная рекомендация.</i>`;
+  const riskGate = validation.rejects.length ? '❌ Risk gate' : '✅ Risk gate';
+  const warnings = validation.warnings.length ? `\n⚠️ ${validation.warnings.slice(0, 3).join(' · ')}` : '';
+  const rejects = validation.rejects.length ? `\n❌ ${validation.rejects.slice(0, 3).join(' · ')}` : '';
+  return `📈 <b>СИГНАЛ · ${order.symbol}</b>
+
+${order.direction === 'LONG' ? '🟢' : '🔴'} ${order.direction} · <b>${order.entryPrice}</b>
+SL 🛡 <b>${order.stopLoss}</b> · TP ✅ <b>${order.takeProfit}</b>
+RR <b>1:${order.rr.toFixed(2)}</b> · Risk <b>${order.riskPercent.toFixed(2)}%</b>
+
+TP1 ✅ · TP2 ⏳ · TP3 ❌
+Комиссия: <b>~${order.commissionRub.toFixed(2)} ₽</b>
+Spread: <b>${order.spreadPercent === null || order.spreadPercent === undefined ? 'нет данных' : `${order.spreadPercent.toFixed(2)}%`}</b>
+Liquidity: <b>${order.liquidityOk === false ? 'низкая' : 'нормальная'}</b>
+Slippage: <b>${(order.slippageRub ?? 0).toFixed(2)} ₽</b>
+
+${riskGate}${rejects}${warnings}
+
+✅ Подтвердить сделку · ❌ Отмена
+
+⚠️ <i>Реальные заявки отключены. Это не инвестиционная рекомендация.</i>`;
 }

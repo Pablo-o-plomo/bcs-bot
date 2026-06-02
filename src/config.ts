@@ -48,7 +48,7 @@ export const config = {
     clientId: optionalEnv('BCS_CLIENT_ID', 'trade-api-read'),
     baseUrl: optionalEnv('BCS_API_BASE_URL', 'https://be.broker.ru'),
     authUrl: optionalEnv('BCS_AUTH_URL', ''),
-    timeoutMs: numberEnv('BCS_API_TIMEOUT_MS', 10000),
+    timeoutMs: numberEnv('BCS_API_TIMEOUT_MS', 20000),
     maxRetries: numberEnv('BCS_API_MAX_RETRIES', 2),
   },
   moex: {
@@ -59,11 +59,17 @@ export const config = {
     apiKey: optionalEnv('OPENAI_API_KEY', ''),
   },
   trading: {
-    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 300000),
+    defaultDepositRub: numberEnv('DEFAULT_DEPOSIT_RUB', 0),
     riskPerTrade: numberEnv('RISK_PER_TRADE', numberEnv('DEFAULT_RISK_PER_TRADE', 1)),
     maxDailyLoss: numberEnv('MAX_DAILY_LOSS', 3),
     maxOpenPositions: numberEnv('MAX_OPEN_POSITIONS', 5),
-    minSignalConfidence: numberEnv('MIN_SIGNAL_CONFIDENCE', 6),
+    minSignalConfidence: numberEnv('MIN_SIGNAL_CONFIDENCE', 7),
+  },
+  marketScan: {
+    enabled: booleanEnv('MARKET_SCAN_ENABLED', true),
+    intervalSeconds: numberEnv('MARKET_SCAN_INTERVAL_SECONDS', 300),
+    maxSignalsPerHour: numberEnv('MAX_SIGNALS_PER_HOUR', 3),
+    cooldownMinutes: numberEnv('SIGNAL_COOLDOWN_MINUTES', 30),
   },
   commissions: {
     stockFeePercent: numberEnv('BCS_STOCK_FEE_PERCENT', 0.04),

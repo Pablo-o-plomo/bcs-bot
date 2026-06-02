@@ -22,6 +22,7 @@ export function initDb(): void {
   db.exec('PRAGMA foreign_keys = ON');
   createTables();
   seedInstruments();
+  removeLegacyDefaultCapital();
   logger.info(`📦 SQLite database initialized: ${dbPath}`);
 }
 
@@ -184,11 +185,29 @@ function seedInstruments(): void {
   for (const item of items) stmt.run(item.ticker, item.name, item.type, item.market);
 }
 
+
+function removeLegacyDefaultCapital(): void {
+  try {
+    const result = db.prepare('UPDATE settings SET depositRub = 0 WHERE depositRub = 300000').run();
+    if (Number(result.changes ?? 0) > 0) logger.info(`settings_default_capital_removed: rows=${result.changes}`);
+  } catch (err: any) {
+    logger.warn(`settings_default_capital_removed failed: ${err?.message ?? err}`);
+  }
+}
+
+function normalizeLegacyDefaultCapital(settings: UserSettings): UserSettings {
+  if (Number(settings.depositRub) === 300000) {
+    logger.info(`settings_default_capital_removed: userId=${settings.userId}`);
+    return { ...settings, depositRub: 0 };
+  }
+  return settings;
+}
+
 export function ensureUser(telegramId: string): User {
   db.prepare('INSERT OR IGNORE INTO users (telegramId) VALUES (?)').run(telegramId);
   const user = db.prepare('SELECT * FROM users WHERE telegramId = ?').get(telegramId) as User;
   db.prepare('INSERT OR IGNORE INTO settings (userId, depositRub, riskPerTrade, maxDailyLoss, maxOpenPositions) VALUES (?, ?, ?, ?, ?)')
-    .run(user.id, config.trading.defaultDepositRub, config.trading.riskPerTrade, config.trading.maxDailyLoss, config.trading.maxOpenPositions);
+    .run(user.id, 0, config.trading.riskPerTrade, config.trading.maxDailyLoss, config.trading.maxOpenPositions);
   db.prepare('INSERT OR IGNORE INTO broker_fees (userId, tariffName, stockFeePercent, currencyFeePercent, futuresFeePerContract, extraCurrencyBuyFeePercent) VALUES (?, ?, ?, ?, ?, ?)')
     .run(user.id, 'БКС базовый', config.commissions.stockFeePercent, config.commissions.currencyFeePercent, config.commissions.futuresFeePerContract, config.commissions.extraCurrencyBuyFeePercent);
   return user;
@@ -201,7 +220,7 @@ export function getUserSettingsByUserId(userId: number): UserSettings {
 export function getUserSettings(telegramId: string): UserSettings & { telegramId: string; broker: string; riskPerTradePercent: number } {
   const user = ensureUser(telegramId);
   const settings = getUserSettingsByUserId(user.id);
-  return { ...settings, telegramId, broker: config.broker, riskPerTradePercent: settings.riskPerTrade };
+  return { ...normalizeLegacyDefaultCapital(settings), telegramId, broker: config.broker, riskPerTradePercent: settings.riskPerTrade };
 }
 
 export function updateUserSettings(telegramId: string, patch: Partial<UserSettings & { riskPerTradePercent: number }>): void {
